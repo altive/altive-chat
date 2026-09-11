@@ -40,4 +40,6 @@ swift_ios_build:
 	xcodebuild -scheme AltiveChat-Package -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/altive-chat-derived CODE_SIGNING_ALLOWED=NO build
 
 swift_ios_test:
-	xcodebuild -scheme AltiveChat-Package -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /tmp/altive-chat-ios-test-derived CODE_SIGNING_ALLOWED=NO test -only-testing:AltiveChatUITests/ChatPasteAwareTextFieldIOSTests
+	xcodebuild -scheme AltiveChat-Package -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /tmp/altive-chat-ios-test-derived CODE_SIGNING_ALLOWED=NO test \
+		-only-testing:AltiveChatUITests/ChatPasteAwareTextFieldIOSTests \
+		-only-testing:AltiveChatUITests/ChatTimelineIOSScrollViewTests

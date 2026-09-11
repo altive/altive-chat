@@ -5,8 +5,42 @@
 
   @testable import AltiveChatUI
 
-  @Suite("iOS実ScrollViewのタイムライン横位置", .serialized)
+  @Suite("iOS実ScrollViewのタイムライン位置", .serialized)
   struct ChatTimelineIOSScrollViewTests {
+    @Test("表示済みの空タイムラインへ履歴が届いても末尾を画面内へ配置する")
+    @MainActor
+    func positionsLatestAfterVisibleEmptyTimelineLoadsContent() async throws {
+      let model = ChatTimelineIOSDelayedLoadModel()
+      let content = ChatTimelineIOSDelayedLoadTestView(model: model)
+        .frame(width: 390, height: 844)
+      let controller = UIHostingController(rootView: content)
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+      window.rootViewController = controller
+      window.makeKeyAndVisible()
+      controller.view.frame = window.bounds
+      defer {
+        window.isHidden = true
+        window.rootViewController = nil
+      }
+
+      await settleLayout(of: controller.view)
+      model.items = Array(0..<30)
+      model.hasLoaded = true
+      await settleLayout(of: controller.view, iterations: 16)
+
+      let scrollView = try #require(findScrollView(in: controller.view))
+      let minimumOffset = -scrollView.adjustedContentInset.top
+      let maximumOffset = max(
+        minimumOffset,
+        scrollView.contentSize.height - scrollView.bounds.height
+          + scrollView.adjustedContentInset.bottom
+      )
+
+      #expect(scrollView.contentOffset.y >= minimumOffset - 2)
+      #expect(scrollView.contentOffset.y <= maximumOffset + 2)
+      #expect(abs(scrollView.contentOffset.y - maximumOffset) < 44)
+    }
+
     @Test("受信メッセージのAvatarを左余白の内側へ配置する")
     @MainActor
     func keepsIncomingAvatarInsideLeadingInset() async throws {
@@ -263,6 +297,48 @@
   @MainActor
   private final class ChatTimelineIOSScrollViewBox {
     weak var scrollView: UIScrollView?
+  }
+
+  @MainActor
+  private final class ChatTimelineIOSDelayedLoadModel: ObservableObject {
+    @Published var items: [Int] = []
+    @Published var hasLoaded = false
+  }
+
+  private struct ChatTimelineIOSDelayedLoadTestView: View {
+    @ObservedObject var model: ChatTimelineIOSDelayedLoadModel
+
+    var body: some View {
+      ChatRoomLayout(
+        timeline: {
+          ChatTimeline(
+            timelineID: "ios-visible-delayed-load-test",
+            isReadyForInitialPositioning: model.hasLoaded,
+            initialPosition: ChatTimelineInitialPosition<Int>.latest,
+            followLatestTrigger: 0,
+            followLatestAnimation: nil,
+            spacing: 12,
+            contentInsets: EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)
+          ) { _ in
+            if !model.hasLoaded, model.items.isEmpty {
+              ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else {
+              ForEach(model.items, id: \.self) { id in
+                Text(verbatim: "本番相当の長い履歴を再現するメッセージです。\(id)")
+                  .frame(maxWidth: .infinity)
+                  .frame(height: 80)
+                  .id(id)
+              }
+            }
+          }
+        },
+        composer: {
+          Color.clear.frame(height: 120)
+        }
+      )
+    }
   }
 
   @MainActor
