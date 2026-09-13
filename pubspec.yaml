@@ -4,7 +4,7 @@ description: >-
   入力欄、テーマを提供し、認証・送信・永続化は利用アプリが担当します。
 repository: https://github.com/altive/altive-chat
 issue_tracker: https://github.com/altive/altive-chat/issues
-version: 1.8.10
+version: 1.8.11
 # pub.devには公開せず、Git依存またはローカルpath依存で提供する。
 publish_to: none
 workspace:
