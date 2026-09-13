@@ -378,7 +378,8 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
           maximumContentWidth: maximumContentWidth
         )
         ScrollView(.vertical) {
-          LazyVStack(spacing: spacing) {
+          // 末尾anchorだけの遅延生成で空白表示になるのを防ぎ、位置決め前に行高を確定する。
+          VStack(spacing: spacing) {
             historyControl(using: timelineProxy)
             content(timelineProxy)
             Color.clear
@@ -465,7 +466,7 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
             bottomMeasurement = measurement
           }
           guard measurement != nil else {
-            // LazyVStackが末尾anchorを画面外で破棄した場合は、過去閲覧中として扱う。
+            // 末尾anchorを画面外で取得できない場合は、過去閲覧中として扱う。
             isNearBottom = false
             return
           }

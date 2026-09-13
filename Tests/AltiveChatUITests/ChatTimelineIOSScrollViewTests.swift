@@ -11,8 +11,12 @@
     @MainActor
     func positionsLatestAfterVisibleEmptyTimelineLoadsContent() async throws {
       let model = ChatTimelineIOSDelayedLoadModel()
-      let content = ChatTimelineIOSDelayedLoadTestView(model: model)
-        .frame(width: 390, height: 844)
+      let latestFrameBox = ChatTimelineIOSFrameBox()
+      let content = ChatTimelineIOSDelayedLoadTestView(
+        model: model,
+        latestFrameBox: latestFrameBox
+      )
+      .frame(width: 390, height: 844)
       let controller = UIHostingController(rootView: content)
       let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
       window.rootViewController = controller
@@ -39,6 +43,45 @@
       #expect(scrollView.contentOffset.y >= minimumOffset - 2)
       #expect(scrollView.contentOffset.y <= maximumOffset + 2)
       #expect(abs(scrollView.contentOffset.y - maximumOffset) < 44)
+      let latestFrame = try #require(latestFrameBox.frame)
+      #expect(latestFrame.intersects(window.bounds))
+    }
+
+    @Test("可変高の履歴を初期表示しても末尾に空白だけを残さない")
+    @MainActor
+    func keepsLatestRowVisibleWithVariableHeightHistory() async throws {
+      let model = ChatTimelineIOSVariableHeightModel()
+      let latestFrameBox = ChatTimelineIOSFrameBox()
+      let appearanceBox = ChatTimelineIOSAppearanceBox()
+      let content = ChatTimelineIOSVariableHeightTestView(
+        model: model,
+        latestFrameBox: latestFrameBox,
+        appearanceBox: appearanceBox
+      )
+      .frame(width: 390, height: 844)
+      let controller = UIHostingController(rootView: content)
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+      window.rootViewController = controller
+      window.makeKeyAndVisible()
+      controller.view.frame = window.bounds
+      defer {
+        window.isHidden = true
+        window.rootViewController = nil
+      }
+
+      await settleLayout(of: controller.view)
+      model.items = Array(0..<100)
+      model.hasLoaded = true
+      await settleLayout(of: controller.view, iterations: 6)
+      model.usesSettledHeights = true
+      await settleLayout(of: controller.view, iterations: 20)
+
+      let scrollView = try #require(findScrollView(in: controller.view))
+      let latestFrame = try #require(latestFrameBox.frame)
+      let visibleBounds = scrollView.frame(in: window)
+      #expect(appearanceBox.ids.count == model.items.count)
+      #expect(latestFrame.intersects(visibleBounds))
+      #expect(latestFrame.maxY <= visibleBounds.maxY + 2)
     }
 
     @Test("受信メッセージのAvatarを左余白の内側へ配置する")
@@ -295,6 +338,11 @@
   }
 
   @MainActor
+  private final class ChatTimelineIOSAppearanceBox {
+    var ids: Set<Int> = []
+  }
+
+  @MainActor
   private final class ChatTimelineIOSScrollViewBox {
     weak var scrollView: UIScrollView?
   }
@@ -305,8 +353,67 @@
     @Published var hasLoaded = false
   }
 
+  @MainActor
+  private final class ChatTimelineIOSVariableHeightModel: ObservableObject {
+    @Published var items: [Int] = []
+    @Published var hasLoaded = false
+    @Published var usesSettledHeights = false
+  }
+
+  private struct ChatTimelineIOSVariableHeightTestView: View {
+    @ObservedObject var model: ChatTimelineIOSVariableHeightModel
+    let latestFrameBox: ChatTimelineIOSFrameBox
+    let appearanceBox: ChatTimelineIOSAppearanceBox
+
+    var body: some View {
+      ChatRoomLayout(
+        timeline: {
+          ChatTimeline(
+            timelineID: "ios-variable-height-history-test",
+            isReadyForInitialPositioning: model.hasLoaded,
+            initialPosition: ChatTimelineInitialPosition<Int>.latest,
+            followLatestTrigger: 0,
+            followLatestAnimation: nil,
+            spacing: 12,
+            contentInsets: EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)
+          ) { _ in
+            ForEach(model.items, id: \.self) { id in
+              Text(verbatim: "可変高メッセージ \(id)")
+                .frame(maxWidth: .infinity)
+                .frame(height: rowHeight(for: id))
+                .onAppear { appearanceBox.ids.insert(id) }
+                .background {
+                  if id == 99 {
+                    GeometryReader { geometry in
+                      Color.clear
+                        .onAppear { latestFrameBox.frame = geometry.frame(in: .global) }
+                        .onChange(of: geometry.frame(in: .global)) { _, frame in
+                          latestFrameBox.frame = frame
+                        }
+                    }
+                  }
+                }
+                .id(id)
+            }
+          }
+        },
+        composer: {
+          Color.clear.frame(height: 120)
+        }
+      )
+    }
+
+    private func rowHeight(for id: Int) -> CGFloat {
+      if model.usesSettledHeights {
+        return CGFloat(44 + (id % 5) * 18)
+      }
+      return CGFloat(160 + (id % 3) * 80)
+    }
+  }
+
   private struct ChatTimelineIOSDelayedLoadTestView: View {
     @ObservedObject var model: ChatTimelineIOSDelayedLoadModel
+    let latestFrameBox: ChatTimelineIOSFrameBox
 
     var body: some View {
       ChatRoomLayout(
@@ -329,6 +436,19 @@
                 Text(verbatim: "本番相当の長い履歴を再現するメッセージです。\(id)")
                   .frame(maxWidth: .infinity)
                   .frame(height: 80)
+                  .background {
+                    if id == 29 {
+                      GeometryReader { geometry in
+                        Color.clear
+                          .onAppear {
+                            latestFrameBox.frame = geometry.frame(in: .global)
+                          }
+                          .onChange(of: geometry.frame(in: .global)) { _, frame in
+                            latestFrameBox.frame = frame
+                          }
+                      }
+                    }
+                  }
                   .id(id)
               }
             }
