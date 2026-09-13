@@ -22,6 +22,11 @@ struct ChatImageInputConfigurationTests {
     #expect(sources == [.photoLibrary, .file])
   }
 
+  @Test("画像取得元メニューの順序を写真、ファイル、ペーストに固定する")
+  func fixesImageSourceMenuOrder() {
+    #expect(chatImageMenuSourceOrder == [.photoLibrary, .file, .clipboard])
+  }
+
   @Test("有効な場合だけ画像providerを貼り付け対象にする")
   func filtersPastedImageProviders() {
     let imageProvider = NSItemProvider()

@@ -7,6 +7,18 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class ChatImageInputTest {
+  @Test
+  fun `画像取得元メニューは写真、ファイル、ペーストの順になる`() {
+    assertEquals(
+      listOf(
+        ChatImageInputSource.PhotoLibrary,
+        ChatImageInputSource.File,
+        ChatImageInputSource.Clipboard,
+      ),
+      chatImageMenuSourceOrder,
+    )
+  }
+
   @Test fun defaultsToFourPickerImages() {
     val configuration = ChatImageInputConfiguration()
     assertEquals(4, configuration.maximumSelectionCount)
@@ -46,7 +58,7 @@ class ChatImageInputTest {
       ChatImageInputSource.Clipboard,
     )
     assertEquals(
-      setOf(ChatImageInputSource.PhotoLibrary, ChatImageInputSource.Clipboard),
+      listOf(ChatImageInputSource.PhotoLibrary, ChatImageInputSource.Clipboard),
       menuImageInputSources(
         availableSources = sources,
         hasFileHandler = false,

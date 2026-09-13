@@ -205,11 +205,17 @@ imageLoader: ChatImageLoader = .standard
 onRequestCamera: (() -> Void)? = nil
 onRequestImageFiles: (() -> Void)? = nil
 onPasteImages: (([NSItemProvider]) -> Void)? = nil
+onPasteUnavailable: (() -> Void)? = nil
 resolvePhotoLibraryItem: (@Sendable (PhotosPickerItem) async throws -> ChatImageDraft)? = nil
 onImagePreparationFailure: ((Error) -> Void)? = nil
 onImageTap: ((_ messageID: String, _ imageIndex: Int) -> Void)? = nil
 onSubmit: (ChatComposerSubmission) -> Void
 ```
+
+`onPasteUnavailable`は、system paste操作から利用可能な画像providerが渡されなかった場合だけ
+通知する。アプリは空状態を実エラーへ変換せず、画像をコピーしてから再操作する案内を表示する。
+providerの読込、decode、正規化に失敗した場合は`onPasteImages`以降のアプリ側処理で実エラーとして
+扱う。
 
 画像対応initializerでは`AltiveChatUI`の公開APIに`PhotosPickerItem`が現れる。これは
 UI targetだけの契約とし、CoreやアプリのStore／Entityへ保存しない。既存の
@@ -247,7 +253,8 @@ public struct ChatImageLoader: Sendable {
 場合は成功済みの画像を保持し、失敗項目を選択から外してアプリへエラーを通知する。
 送信可否に使う処理中状態は、Package内の写真resolver実行状態とアプリから渡された
 `isPreparingCameraImage`の論理和とする。
-ボタン順は`Set`の列挙順に依存させず、常にカメラ、写真ライブラリの順とする。
+ボタン順は`Set`の列挙順に依存させず、カメラを独立して先頭に置き、写真menu内を常に
+写真ライブラリ、file、clipboardの順とする。
 
 `PhotosPicker.maxSelectionCount`には、現在選択済みの写真を含めた
 `maximumSelectionCount - cameraDraftCount`を渡す。単純な新規追加可能数は渡さない。

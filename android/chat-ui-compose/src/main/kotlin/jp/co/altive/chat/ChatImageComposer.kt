@@ -255,7 +255,7 @@ fun ChatImageComposer(
 
 @Composable
 private fun ChatImageSourceMenu(
-  availableImageInputSources: Set<ChatImageInputSource>,
+  availableImageInputSources: Collection<ChatImageInputSource>,
   enabled: Boolean,
   strings: ChatRoomStrings,
   onRequestPhotoLibrary: () -> Unit,

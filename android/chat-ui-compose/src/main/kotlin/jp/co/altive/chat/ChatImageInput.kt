@@ -40,12 +40,18 @@ internal fun multiplePhotoPickerLimit(remainingCapacity: Int, platformMaximum: I
 
 internal fun canReceivePastedImages(remainingCapacity: Int): Boolean = remainingCapacity > 0
 
+internal val chatImageMenuSourceOrder = listOf(
+  ChatImageInputSource.PhotoLibrary,
+  ChatImageInputSource.File,
+  ChatImageInputSource.Clipboard,
+)
+
 internal fun menuImageInputSources(
   availableSources: Set<ChatImageInputSource>,
   hasFileHandler: Boolean,
   hasClipboardHandler: Boolean,
-): Set<ChatImageInputSource> = availableSources.filterTo(mutableSetOf()) { source ->
-  when (source) {
+): List<ChatImageInputSource> = chatImageMenuSourceOrder.filter { source ->
+  source in availableSources && when (source) {
     ChatImageInputSource.Camera -> false
     ChatImageInputSource.PhotoLibrary -> true
     ChatImageInputSource.File -> hasFileHandler

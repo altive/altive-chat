@@ -11,20 +11,27 @@ func chatImageMenuSources(
   from sources: Set<ChatImageInputSource>,
   canRequestImageFiles: Bool,
   canPasteImages: Bool
-) -> Set<ChatImageInputSource> {
-  sources.filter { source in
+) -> [ChatImageInputSource] {
+  chatImageMenuSourceOrder.filter { source in
+    guard sources.contains(source) else { return false }
     switch source {
     case .camera:
-      false
+      return false
     case .photoLibrary:
-      true
+      return true
     case .file:
-      canRequestImageFiles
+      return canRequestImageFiles
     case .clipboard:
-      canPasteImages
+      return canPasteImages
     }
   }
 }
+
+let chatImageMenuSourceOrder: [ChatImageInputSource] = [
+  .photoLibrary,
+  .file,
+  .clipboard,
+]
 
 /// テキストまたは画像を送信できるかを判定する純粋な方針。
 public enum ChatComposerSendPolicy {
@@ -70,6 +77,7 @@ public struct ChatImageComposer: View {
   let onRequestCamera: (() -> Void)?
   let onRequestImageFiles: (() -> Void)?
   let onPasteImages: (([NSItemProvider]) -> Void)?
+  let onPasteUnavailable: (() -> Void)?
   let onRemoveImage: (String) -> Void
   let onSubmit: () -> Void
   private let additionalSourceButton: AnyView?
@@ -100,6 +108,7 @@ public struct ChatImageComposer: View {
     onRequestCamera: (() -> Void)?,
     onRequestImageFiles: (() -> Void)? = nil,
     onPasteImages: (([NSItemProvider]) -> Void)? = nil,
+    onPasteUnavailable: (() -> Void)? = nil,
     onRemoveImage: @escaping (String) -> Void,
     onSubmit: @escaping () -> Void,
     additionalSourceButton: AnyView? = nil
@@ -128,6 +137,7 @@ public struct ChatImageComposer: View {
     self.onRequestCamera = onRequestCamera
     self.onRequestImageFiles = onRequestImageFiles
     self.onPasteImages = onPasteImages
+    self.onPasteUnavailable = onPasteUnavailable
     self.onRemoveImage = onRemoveImage
     self.onSubmit = onSubmit
     self.additionalSourceButton = additionalSourceButton
@@ -393,7 +403,7 @@ public struct ChatImageComposer: View {
     !imageMenuSources.isEmpty
   }
 
-  private var imageMenuSources: Set<ChatImageInputSource> {
+  private var imageMenuSources: [ChatImageInputSource] {
     chatImageMenuSources(
       from: availableImageInputSources,
       canRequestImageFiles: onRequestImageFiles != nil,
@@ -413,7 +423,10 @@ public struct ChatImageComposer: View {
 
   private func handlePastedImages(_ providers: [NSItemProvider]) {
     let images = chatImageProviders(from: providers, isEnabled: isImagePasteEnabled)
-    guard !images.isEmpty else { return }
+    guard !images.isEmpty else {
+      onPasteUnavailable?()
+      return
+    }
     onPasteImages?(images)
   }
 

@@ -24,6 +24,7 @@ fileはStorage Access Frameworkの`OpenDocument` / `OpenMultipleDocuments`を使
 typeだけを要求する。clipboardはmenuの明示操作時だけ`ClipboardManager`を読み、画像URIを
 既存resolverへ渡す。入力欄へのpasteは`Modifier.contentReceiver`で画像URIだけを消費し、
 画像ではない内容と、選択上限到達時の内容は通常の文字入力へ渡す。
+写真menuの項目順は`Set`の列挙順に依存させず、常に写真ライブラリ、file、clipboardとする。
 
 ## 公開契約
 
