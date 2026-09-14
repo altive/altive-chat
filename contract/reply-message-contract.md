@@ -12,7 +12,7 @@ AltiveChatは返信先の取得や永続化を行わず、利用アプリが検�
 
 - `ChatMessage`全体を返信先へ入れず、再帰しない`ChatReplyReference`を使用する。
 - 返信参照は対象messageが現在のpageに存在しなくても単独で表示できるsnapshotとする。
-- packageは選択中の返信先、入力欄上部のpreview、送信済みmessage内の引用表示を所有する。
+- packageは選択中の返信先、選択preview、送信済みmessage内の引用表示を所有する。
 - appは権限、保存、対象messageの検証、引用tap後の取得とnavigationを所有する。
 - replyだけでは送信できない。本文、画像、ステッカーのいずれかが必要である。
 - system messageは既定で返信対象外とする。
@@ -23,7 +23,7 @@ AltiveChatが所有する。
 
 - 返信可能な標準messageから`ChatReplyReference`を作る変換
 - 長押し操作内の返信actionと、選択中の返信先の置換・取消
-- Composer上部の返信previewと送信済みmessage内の引用表示
+- 選択中の返信previewと送信済みmessage内の引用表示
 - 本文の最大行数、画像・ステッカーthumbnail、欠損時fallback、theme
 - 返信action、取消、引用tapのアクセシビリティとローカライズ
 - 返信参照を型付きsubmissionへ含め、callback直後にdraftと返信選択を消す状態遷移
@@ -163,7 +163,7 @@ ChatReplyConfiguration
 
 1. 利用者が返信可能なmessageまたは画像を長押しし、返信actionを選ぶ。
 2. packageが軽量snapshotを作り、既存の選択を置き換えてComposerへfocusする。
-3. Composer上部に送信者名、内容preview、取消操作を表示する。
+3. 選択中の対象messageと取消操作を入力欄の近くへ表示する。
 4. 本文、画像、ステッカーのいずれかと一緒に送信すると、同じsnapshotを
    `ChatComposerSubmission.replyTo`へ含める。
 5. packageは送信callback呼出し直後に入力内容、添付、ステッカー、返信選択を消す。
@@ -185,10 +185,13 @@ URLやbackend pathは渡さない。appは必要なら履歴を取得し、既�
 - `imageIndex`が不正でもcrashせず、渡されたthumbnailまたは画像labelへfallbackする。
 - `unavailable`はpackageのlocalized stringで「このメッセージは表示できません」相当を
   表示する。
-- 入力欄の返信previewには明示的な取消buttonを44pt / 48dp相当のhit targetで提供する。
+- 選択中の返信previewには明示的な取消buttonを44pt / 48dp相当のhit targetで提供する。
 - 引用全体を1つのアクセシビリティ要素として、返信先、送信者名、内容の順に
   読み上げる。
 - context menu、popover、hapticなどの外観はOS標準を優先し、操作結果だけを揃える。
+
+SwiftUIでは選択中にタイムラインだけへblurをかけ、元の大きさを保った対象messageを
+入力欄の直上へ重ねて表示する。入力欄自体はblurせず、選択中も通常どおり入力できること。
 
 ## 後方互換性
 

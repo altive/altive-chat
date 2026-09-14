@@ -44,6 +44,7 @@ public struct AltiveChatRoom: View {
   @State private var hasPresentedMessages = false
   @State private var linkPreviewCoordinator: ChatLinkPreviewDraftCoordinator
   @State private var selectedReply: ChatReplyReference?
+  @State private var selectedReplyMessage: ChatMessage?
 
   /// テキスト送信だけを利用するチャット画面を作成する。
   ///
@@ -106,6 +107,7 @@ public struct AltiveChatRoom: View {
       initialValue: ChatLinkPreviewDraftCoordinator(resolver: linkPreviewResolver)
     )
     _selectedReply = State(initialValue: nil)
+    _selectedReplyMessage = State(initialValue: nil)
   }
 
   /// テキストと複数画像を送信できるチャット画面を作成する。
@@ -178,6 +180,7 @@ public struct AltiveChatRoom: View {
       initialValue: ChatLinkPreviewDraftCoordinator(resolver: linkPreviewResolver)
     )
     _selectedReply = State(initialValue: nil)
+    _selectedReplyMessage = State(initialValue: nil)
   }
 
   public var body: some View {
@@ -186,56 +189,68 @@ public struct AltiveChatRoom: View {
 
   private var roomContent: some View {
     ChatRoomLayout {
-      ChatTimeline(
-        timelineID: "AltiveChatRoom",
-        isReadyForInitialPositioning: true,
-        initialPosition: ChatTimelineInitialPosition<String>.latest,
-        followLatestTrigger: messages.last?.id,
-        followLatestAnimation: hasPresentedMessages ? .easeOut(duration: 0.2) : nil,
-        latestFollowingPolicy: .whenNearBottom,
-        latestProximityThreshold: latestProximityThreshold,
-        forceFollowLatest: messages.last?.isSent(by: currentUserID) == true,
-        latestControl: .button(label: strings.latestMessagesLabel),
-        spacing: 12,
-        contentInsets: EdgeInsets(top: 12, leading: 16, bottom: 0, trailing: 16)
-      ) { _ in
-        if messages.isEmpty {
-          Text(strings.emptyMessage)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 48)
-        } else {
-          ForEach(messages) { message in
-            ChatMessageRow(
-              message: message,
-              currentUserID: currentUserID,
-              theme: theme,
-              strings: strings,
-              showsSenderName: showsSenderName,
-              imageLoader: imageLoader,
-              linkPreviewImageLoader: linkPreviewImageLoader,
-              stickerImageLoader: stickerImageLoader,
-              singleImageLayout: singleImageLayout,
-              multipleImageLayout: multipleImageLayout,
-              onImageTap: onImageTap,
-              onLinkPreviewTap: onLinkPreviewTap,
-              onRetry: onRetry.map { retry in
-                { retry(message.id) }
-              },
-              onReply: replyHandler(for: message),
-              onReplyReferenceTap: replyConfiguration?.onReferenceTap
-            )
-            .id(message.id)
+      ZStack(alignment: .bottom) {
+        ChatTimeline(
+          timelineID: "AltiveChatRoom",
+          isReadyForInitialPositioning: true,
+          initialPosition: ChatTimelineInitialPosition<String>.latest,
+          followLatestTrigger: messages.last?.id,
+          followLatestAnimation: hasPresentedMessages ? .easeOut(duration: 0.2) : nil,
+          latestFollowingPolicy: .whenNearBottom,
+          latestProximityThreshold: latestProximityThreshold,
+          forceFollowLatest: messages.last?.isSent(by: currentUserID) == true,
+          latestControl: .button(label: strings.latestMessagesLabel),
+          spacing: 12,
+          contentInsets: EdgeInsets(top: 12, leading: 16, bottom: 0, trailing: 16)
+        ) { _ in
+          if messages.isEmpty {
+            Text(strings.emptyMessage)
+              .foregroundStyle(.secondary)
+              .frame(maxWidth: .infinity)
+              .padding(.vertical, 48)
+          } else {
+            ForEach(messages) { message in
+              ChatMessageRow(
+                message: message,
+                currentUserID: currentUserID,
+                theme: theme,
+                strings: strings,
+                showsSenderName: showsSenderName,
+                imageLoader: imageLoader,
+                linkPreviewImageLoader: linkPreviewImageLoader,
+                stickerImageLoader: stickerImageLoader,
+                singleImageLayout: singleImageLayout,
+                multipleImageLayout: multipleImageLayout,
+                onImageTap: onImageTap,
+                onLinkPreviewTap: onLinkPreviewTap,
+                onRetry: onRetry.map { retry in
+                  { retry(message.id) }
+                },
+                onReply: replyHandler(for: message),
+                onReplyReferenceTap: replyConfiguration?.onReferenceTap
+              )
+              .id(message.id)
+            }
           }
+        }
+        .blur(radius: selectedReply == nil ? 0 : 12)
+        .allowsHitTesting(selectedReply == nil)
+        .accessibilityHidden(selectedReply != nil)
+        .onAppear {
+          hasPresentedMessages = !messages.isEmpty
+        }
+        .onChange(of: messages.last?.id) { _, currentID in
+          hasPresentedMessages = currentID != nil
+        }
+
+        if let selectedReplyMessage {
+          selectedReplyOverlay(message: selectedReplyMessage)
+            .safeAreaPadding(.bottom)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
       }
       .background(theme.background)
-      .onAppear {
-        hasPresentedMessages = !messages.isEmpty
-      }
-      .onChange(of: messages.last?.id) { _, currentID in
-        hasPresentedMessages = currentID != nil
-      }
+      .animation(.easeOut(duration: 0.2), value: selectedReply?.messageID)
     } composer: {
       composer
     }
@@ -257,16 +272,6 @@ public struct AltiveChatRoom: View {
   @ViewBuilder
   private var composer: some View {
     VStack(spacing: 0) {
-      if let selectedReply {
-        ChatReplyComposerBar(
-          reference: selectedReply,
-          strings: strings,
-          imageLoader: imageLoader,
-          stickerImageLoader: stickerImageLoader,
-          onCancel: { self.selectedReply = nil }
-        )
-      }
-
       if let configuration = imageInputConfiguration {
         ChatImageComposer(
           draft: $draft,
@@ -325,7 +330,7 @@ public struct AltiveChatRoom: View {
               guard let enriched = submissionWithSelectedReply(submission) else { return }
               submit(enriched)
               draft = ""
-              selectedReply = nil
+              clearSelectedReply()
             }
           },
           attachmentPreview: { EmptyView() },
@@ -341,8 +346,41 @@ public struct AltiveChatRoom: View {
     else { return nil }
     return {
       selectedReply = reference
+      selectedReplyMessage = message
       isComposerFocused = true
     }
+  }
+
+  private func selectedReplyOverlay(message: ChatMessage) -> some View {
+    ZStack(alignment: message.isSent(by: currentUserID) ? .leading : .trailing) {
+      ChatMessageRow(
+        message: message,
+        currentUserID: currentUserID,
+        theme: theme,
+        strings: strings,
+        showsSenderName: showsSenderName,
+        imageLoader: imageLoader,
+        linkPreviewImageLoader: linkPreviewImageLoader,
+        stickerImageLoader: stickerImageLoader,
+        singleImageLayout: singleImageLayout,
+        multipleImageLayout: multipleImageLayout
+      )
+
+      Button(action: clearSelectedReply) {
+        Image(systemName: "xmark")
+          .frame(width: 44, height: 44)
+          .background(.regularMaterial, in: Circle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(strings.cancelReplyLabel)
+    }
+    .padding(.horizontal, 16)
+    .padding(.bottom, 12)
+  }
+
+  private func clearSelectedReply() {
+    selectedReply = nil
+    selectedReplyMessage = nil
   }
 
   private func submissionWithSelectedReply(
@@ -492,6 +530,6 @@ public struct AltiveChatRoom: View {
     imageDrafts.removeAll()
     selectedPhotoItems.removeAll()
     photoDraftIDs.removeAll()
-    selectedReply = nil
+    clearSelectedReply()
   }
 }

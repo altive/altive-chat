@@ -27,9 +27,9 @@ public struct ChatReplyQuote: View {
 
   public var body: some View {
     HStack(spacing: 8) {
-      Rectangle()
+      Capsule()
         .fill(.secondary)
-        .frame(width: 3)
+        .frame(width: 3, height: 44)
 
       VStack(alignment: .leading, spacing: 2) {
         Text(reference.senderDisplayName)
