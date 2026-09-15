@@ -196,6 +196,12 @@ ChatRoomLayout {
   AppSpecificComposer()
 }
 ```
+
+`isReadyForInitialPositioning`は、初期データを行として渡せる状態になってから`true`にします。
+SwiftUI版の末尾配置は、実際の最新行が画面内へ表示されることを契約上の成功条件としています。
+タイムラインのstackや末尾anchorを変更する場合は、遅延ロードと100件の可変高行を含む
+[初期表示の回帰防止条件](contract/chat-ui-contract.md#初期表示の回帰防止条件)を維持してください。
+
 吹き出し、入力欄、送信状態と再送導線、リアクションと長押し操作、ステッカーpicker、
 アバター、システムイベントの展開、汎用メッセージカード、複数画像メッセージ、OS標準の複数選択Photos Picker、
 キーボードとスタンプ入力面のレイアウト計算を
