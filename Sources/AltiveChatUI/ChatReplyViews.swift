@@ -135,6 +135,7 @@ public struct ChatReplyComposerBar: View {
       Button(action: onCancel) {
         Image(systemName: "xmark")
           .frame(width: 44, height: 44)
+          .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .accessibilityLabel(strings.cancelReplyLabel)

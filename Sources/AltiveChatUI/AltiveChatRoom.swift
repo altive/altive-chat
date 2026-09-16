@@ -370,6 +370,7 @@ public struct AltiveChatRoom: View {
         Image(systemName: "xmark")
           .frame(width: 44, height: 44)
           .background(.regularMaterial, in: Circle())
+          .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .accessibilityLabel(strings.cancelReplyLabel)
