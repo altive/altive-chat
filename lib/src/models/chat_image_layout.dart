@@ -20,6 +20,8 @@ class ChatSingleImageLayout {
   const ChatSingleImageLayout.square()
     : minHeight = null,
       maxHeight = null,
+      maxWidthFraction = null,
+      maxHeightWidthRatio = null,
       fit = BoxFit.cover;
 
   /// 元の縦横比を尊重し、指定した高さの範囲で表示する設定。
@@ -29,8 +31,22 @@ class ChatSingleImageLayout {
     this.fit = BoxFit.cover,
   }) : minHeight = minHeight,
        maxHeight = maxHeight,
+       maxWidthFraction = null,
+       maxHeightWidthRatio = null,
        assert(minHeight > 0),
        assert(maxHeight >= minHeight);
+
+  /// 元画像の比率を保ち、画面幅に対する上限内で実画像の幅に合わせる設定。
+  const ChatSingleImageLayout.intrinsicBounded({
+    double maxWidthFraction = 0.5,
+    double maxHeightWidthRatio = 1.5,
+  }) : minHeight = null,
+       maxHeight = null,
+       maxWidthFraction = maxWidthFraction,
+       maxHeightWidthRatio = maxHeightWidthRatio,
+       fit = BoxFit.contain,
+       assert(maxWidthFraction > 0 && maxWidthFraction <= 1),
+       assert(maxHeightWidthRatio > 0);
 
   /// 最小表示高さ。`null`の場合は正方形表示。
   final double? minHeight;
@@ -38,11 +54,20 @@ class ChatSingleImageLayout {
   /// 最大表示高さ。`null`の場合は正方形表示。
   final double? maxHeight;
 
+  /// 画面幅に対する画像幅の上限。実画像幅に合わせる設定以外では`null`。
+  final double? maxWidthFraction;
+
+  /// 最大幅に対する画像高さの上限倍率。実画像幅に合わせる設定以外では`null`。
+  final double? maxHeightWidthRatio;
+
   /// 画像の収め方。
   final BoxFit fit;
 
-  /// 元画像の縦横比を利用するかどうか。
+  /// 最小高と最大高を使う可変比率表示かどうか。
   bool get isAdaptive => minHeight != null;
+
+  /// 実画像の幅に合わせて単一画像を表示するかどうか。
+  bool get isIntrinsicBounded => maxWidthFraction != null;
 }
 
 /// チャット画像のレイアウト設定。

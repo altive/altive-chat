@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 
@@ -611,14 +612,12 @@ class _ImagesMessageBubble extends StatelessWidget {
           : CrossAxisAlignment.start,
       children: [
         if (replyTo != null) ...[
-          _ReplyToMessageBubble(
-            replyTo: replyTo,
-            isOutgoing: isOutgoing,
-          ),
+          _ReplyToMessageBubble(replyTo: replyTo, isOutgoing: isOutgoing),
           const SizedBox(height: 4),
         ],
         _ImagesMessageBubbleContents(
           message: message,
+          isOutgoing: isOutgoing,
           onImageMessageTap: onImageMessageTap,
           onImageTap: onImageTap,
           popupMenuLayout: popupMenuLayout,
@@ -651,6 +650,7 @@ class _ImagesMessageBubble extends StatelessWidget {
 class _ImagesMessageBubbleContents extends StatelessWidget {
   const _ImagesMessageBubbleContents({
     required this.message,
+    required this.isOutgoing,
     required this.onImageMessageTap,
     required this.onImageTap,
     required this.popupMenuLayout,
@@ -663,6 +663,7 @@ class _ImagesMessageBubbleContents extends StatelessWidget {
   static const spacing = 4.0;
 
   final ChatImagesMessage message;
+  final bool isOutgoing;
   final ImageMessageTapCallback? onImageMessageTap;
   final ChatImageTapCallback? onImageTap;
   final PopupMenuLayout? popupMenuLayout;
@@ -718,6 +719,7 @@ class _ImagesMessageBubbleContents extends StatelessWidget {
           1 => [
             _SingleImageSection(
               message: message,
+              isOutgoing: isOutgoing,
               size: totalWidth,
               onTap: handleTap,
               buildOnLongPress: buildOnLongPress,
@@ -796,7 +798,14 @@ class _ImagesMessageBubbleContents extends StatelessWidget {
 
         return Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          // 実画像幅に合わせる場合は余白を画像幅と誤認させず、時刻を画像端に寄せる。
+          crossAxisAlignment:
+              imageUrls.length == 1 &&
+                  imageLayoutConfiguration.singleImageLayout.isIntrinsicBounded
+              ? isOutgoing
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start
+              : CrossAxisAlignment.stretch,
           children: sectionChildren,
         );
       },
@@ -815,6 +824,7 @@ typedef PopupMenuLongPressBuilder =
 class _SingleImageSection extends StatelessWidget {
   const _SingleImageSection({
     required this.message,
+    required this.isOutgoing,
     required this.size,
     required this.onTap,
     required this.buildOnLongPress,
@@ -822,6 +832,7 @@ class _SingleImageSection extends StatelessWidget {
   });
 
   final ChatImagesMessage message;
+  final bool isOutgoing;
   final double size;
   final ValueChanged<int> onTap;
   final PopupMenuLongPressBuilder buildOnLongPress;
@@ -833,8 +844,9 @@ class _SingleImageSection extends StatelessWidget {
     final key = GlobalObjectKey('img_${message.id}_$index');
     final longPress = buildOnLongPress(context, key, index);
 
-    final adaptiveHeight =
-        layout.isAdaptive && message.hasExplicitImageAspectRatios
+    final adaptiveHeight = layout.isIntrinsicBounded
+        ? null
+        : layout.isAdaptive && message.hasExplicitImageAspectRatios
         ? (size * message.imageAspectRatios.first).clamp(
             layout.minHeight!,
             layout.maxHeight!,
@@ -846,6 +858,11 @@ class _SingleImageSection extends StatelessWidget {
       key: key,
       width: size,
       height: adaptiveHeight,
+      intrinsicMaxWidth: layout.isIntrinsicBounded
+          ? min(MediaQuery.widthOf(context) * layout.maxWidthFraction!, size)
+          : null,
+      intrinsicMaxHeightWidthRatio: layout.maxHeightWidthRatio,
+      isOutgoing: isOutgoing,
       intrinsicMinHeight: layout.isAdaptive ? layout.minHeight : null,
       intrinsicMaxHeight: layout.isAdaptive ? layout.maxHeight : null,
       borderRadius: BorderRadius.circular(10),
@@ -1081,6 +1098,9 @@ class _ImageTile extends StatelessWidget {
     this.fit = BoxFit.cover,
     this.intrinsicMinHeight,
     this.intrinsicMaxHeight,
+    this.intrinsicMaxWidth,
+    this.intrinsicMaxHeightWidthRatio,
+    this.isOutgoing = false,
     this.overflowCount = 0,
   });
 
@@ -1093,10 +1113,38 @@ class _ImageTile extends StatelessWidget {
   final BoxFit fit;
   final double? intrinsicMinHeight;
   final double? intrinsicMaxHeight;
+  final double? intrinsicMaxWidth;
+  final double? intrinsicMaxHeightWidthRatio;
+  final bool isOutgoing;
   final int overflowCount;
 
   @override
   Widget build(BuildContext context) {
+    final intrinsicMaxWidth = this.intrinsicMaxWidth;
+    if (intrinsicMaxWidth != null) {
+      return Align(
+        alignment: isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
+        widthFactor: 1,
+        child: ClipRRect(
+          borderRadius: borderRadius,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: intrinsicMaxWidth,
+              maxHeight: intrinsicMaxWidth * intrinsicMaxHeightWidthRatio!,
+            ),
+            child: GestureDetector(
+              onTap: onTap,
+              onLongPress: onLongPress,
+              child: CommonCachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.contain,
+                retainPreviousImage: true,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return ClipRRect(
       borderRadius: borderRadius,
       child: GestureDetector(
@@ -1212,10 +1260,7 @@ class StickerMessageBubble extends StatelessWidget {
           : CrossAxisAlignment.start,
       children: [
         if (replyTo != null) ...[
-          _ReplyToMessageBubble(
-            replyTo: replyTo,
-            isOutgoing: isOutgoing,
-          ),
+          _ReplyToMessageBubble(replyTo: replyTo, isOutgoing: isOutgoing),
           const SizedBox(height: 4),
         ],
         // ポップアップメニューが設定されている場合、表示する為の `GestureDetector` を追加する。
