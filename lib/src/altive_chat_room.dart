@@ -45,10 +45,7 @@ class ChatReplyConfiguration {
   final void Function(String messageId, int? imageIndex)? onReferenceTap;
 
   /// package標準条件とApp固有条件を満たす返信参照を返す。
-  ChatReplyReference? referenceFor(
-    ChatUserMessage message, {
-    int? imageIndex,
-  }) {
+  ChatReplyReference? referenceFor(ChatUserMessage message, {int? imageIndex}) {
     if (!_defaultCanReply(message) || !canReply(message)) {
       return null;
     }
@@ -78,6 +75,15 @@ ChatMessage? _latestMessage(List<ChatMessage> messages) {
     return null;
   }
   return _newestFirstMessages(messages).first;
+}
+
+/// 端末の暦日で同じ日付か判定する。
+bool _isSameLocalDate(DateTime left, DateTime right) {
+  final localLeft = left.toLocal();
+  final localRight = right.toLocal();
+  return localLeft.year == localRight.year &&
+      localLeft.month == localRight.month &&
+      localLeft.day == localRight.day;
 }
 
 /// {@template altive_chat_room.AltiveChatRoom}
@@ -116,6 +122,7 @@ class AltiveChatRoom extends StatefulWidget {
     this.messageBottomWidgetBuilder,
     this.popupMenuAccessoryBuilder,
     this.dateTextBuilder,
+    this.dateTextFormatter,
     this.onAvatarTap,
     this.onImageMessageTap,
     this.onImageTap,
@@ -252,10 +259,13 @@ class AltiveChatRoom extends StatefulWidget {
   /// デフォルトの日付表示をカスタマイズするビルダー。
   ///
   /// Parameters:
-  ///   `dateText` - 日付表示用文字列（M月d日(EE)）
-  ///                今日と昨日の場合以外は日付表記になる。
-  ///                e.g. 今日、昨日、1月1日(日)
+  ///   `dateText` - [dateTextFormatter]またはパッケージ標準で生成した文字列。
   final Widget Function({required String dateText})? dateTextBuilder;
+
+  /// 日付ラベルの文字列を日時から生成する処理。
+  ///
+  /// 未指定時はパッケージ標準の英語表記を使用する。
+  final String Function(DateTime dateTime)? dateTextFormatter;
 
   /// アバターをタップした時の処理。
   final ValueChanged<ChatUser>? onAvatarTap;
@@ -502,6 +512,8 @@ class _AltiveChatRoomState extends State<AltiveChatRoom> {
               },
         replyActionLabel: widget.replyActionLabel,
         dateTextBuilder: widget.dateTextBuilder,
+        dateTextFormatter: widget.dateTextFormatter,
+        onScrollToTop: widget.onScrollToTop,
         messageTypeNotifier: messageTypeNotifier,
         onAvatarTap: widget.onAvatarTap,
         onImageMessageTap: widget.onImageMessageTap,
@@ -841,6 +853,8 @@ class _MessageListView extends StatefulWidget {
     required this.onReplyRequested,
     required this.replyActionLabel,
     required this.dateTextBuilder,
+    required this.dateTextFormatter,
+    required this.onScrollToTop,
     required this.messageTypeNotifier,
     required this.onAvatarTap,
     required this.onImageMessageTap,
@@ -883,6 +897,8 @@ class _MessageListView extends StatefulWidget {
   final ValueChanged<ChatUserMessage>? onReplyRequested;
   final String replyActionLabel;
   final Widget Function({required String dateText})? dateTextBuilder;
+  final String Function(DateTime dateTime)? dateTextFormatter;
+  final VoidCallback? onScrollToTop;
   final ValueNotifier<MessageInputType> messageTypeNotifier;
   final ValueChanged<ChatUser>? onAvatarTap;
   final ImageMessageTapCallback? onImageMessageTap;
@@ -920,6 +936,9 @@ class _MessageListViewState extends State<_MessageListView> {
   final _seenMessageIds = <String>{};
   // 今回の更新で出現アニメーションを適用するメッセージID。
   String? _showAnimationMessageId;
+
+  /// 表示領域が埋まらないときに追加取得を要求した最後の最古メッセージID。
+  String? _lastUnderfilledOldestMessageId;
 
   @override
   void initState() {
@@ -976,6 +995,27 @@ class _MessageListViewState extends State<_MessageListView> {
   Widget build(BuildContext context) {
     final altiveChatRoomTheme = InheritedAltiveChatRoomTheme.of(context).theme;
 
+    // 初回ページが画面内に収まるとスクロール終了通知が発生せず、履歴取得の契機がない。
+    // 最古のメッセージが変わるたびに空き領域を確認し、埋まるまで次ページを要求する。
+    if (widget.onScrollToTop != null && widget.messages.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.onScrollToTop == null) {
+          return;
+        }
+        final controller = widget.scrollController;
+        if (controller == null || !controller.hasClients) {
+          return;
+        }
+        final oldestMessageId = widget.messages.last.id;
+        if (controller.position.maxScrollExtent > 0 ||
+            _lastUnderfilledOldestMessageId == oldestMessageId) {
+          return;
+        }
+        _lastUnderfilledOldestMessageId = oldestMessageId;
+        widget.onScrollToTop?.call();
+      });
+    }
+
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollUpdateNotification ||
@@ -1006,8 +1046,10 @@ class _MessageListViewState extends State<_MessageListView> {
             // 日付の切り替わり位置でヘッダーを表示する。
             final isFirstInGroup =
                 index == widget.messages.length - 1 ||
-                widget.messages[index + 1].createdAt.dateText !=
-                    message.createdAt.dateText;
+                !_isSameLocalDate(
+                  widget.messages[index + 1].createdAt,
+                  message.createdAt,
+                );
 
             final messageItem = MessageItem(
               key: ValueKey(message.id),
@@ -1065,9 +1107,16 @@ class _MessageListViewState extends State<_MessageListView> {
                 // 同じ日付の中で先頭の場合のみヘッダーを表示する
                 if (isFirstInGroup) ...[
                   if (dateTextBuilder == null)
-                    _DateText(dateTime: message.createdAt)
+                    _DateText(
+                      dateTime: message.createdAt,
+                      dateTextFormatter: widget.dateTextFormatter,
+                    )
                   else
-                    dateTextBuilder(dateText: message.createdAt.dateText),
+                    dateTextBuilder(
+                      dateText:
+                          widget.dateTextFormatter?.call(message.createdAt) ??
+                          message.createdAt.dateText,
+                    ),
                   SizedBox(height: altiveChatRoomTheme.messageInsetsVertical),
                 ],
 
@@ -1086,9 +1135,10 @@ class _MessageListViewState extends State<_MessageListView> {
 
 /// 日付を表示するWidget。
 class _DateText extends StatelessWidget {
-  const _DateText({required this.dateTime});
+  const _DateText({required this.dateTime, this.dateTextFormatter});
 
   final DateTime dateTime;
+  final String Function(DateTime dateTime)? dateTextFormatter;
 
   @override
   Widget build(BuildContext context) {
@@ -1101,7 +1151,7 @@ class _DateText extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
-        dateTime.dateText,
+        dateTextFormatter?.call(dateTime) ?? dateTime.dateText,
         style: theme.textTheme.labelSmall!.copyWith(
           color: colorScheme.onInverseSurface,
         ),

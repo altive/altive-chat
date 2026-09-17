@@ -68,6 +68,10 @@ SwiftUI、Flutter、Jetpack Composeで揃える。
 - タイムラインcontent幅はviewportから左右余白を除いた幅を上限とし、表示内容や初期配置の
   timingにかかわらず横方向へscroll可能な余剰領域を作らない
 - 履歴追加時の位置保持は、追加行のレイアウト反映後にアニメーションなしで復元する
+- Flutterでは初回履歴が表示領域を満たさない場合も、最古のメッセージが変わるたびに
+  上端到達callbackを通知する。追加取得可能かどうかと実際の取得はアプリが決める
+- Flutterの日付区切りは端末の暦日で挿入し、文字列は日時を受ける任意のformatterから
+  生成できる。formatter未指定時は既定の英語表記を維持する
 - 通常起動の末尾、指定項目の中央、履歴追加後の位置保持を実ScrollViewで回帰検証する
 - プラットフォームごとのPreview、Widget test、Screenshot test用fixture
 
