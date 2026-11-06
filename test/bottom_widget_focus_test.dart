@@ -3,6 +3,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('集約menuは入力中も維持し同じ入力欄に下書きを残す', (tester) async {
+    await tester.pumpWidget(
+      _testApp(
+        sourcePresentation: ChatComposerSourcePresentation.attachmentMenu,
+      ),
+    );
+    final textField = tester.widget<TextField>(find.byType(TextField));
+    await tester.enterText(find.byType(TextField), '下書き');
+    textField.focusNode!.requestFocus();
+    await tester.pump();
+    expect(find.byKey(const Key('先頭ボタン')), findsOneWidget);
+    expect(find.byKey(const Key('展開ボタン')), findsNothing);
+    final updated = tester.widget<TextField>(find.byType(TextField));
+    expect(identical(textField.controller, updated.controller), isTrue);
+    expect(updated.controller!.text, '下書き');
+    expect(updated.focusNode!.hasFocus, isTrue);
+  });
+
   testWidgets('入力欄にフォーカスが当たると先頭ボタンを閉じる', (tester) async {
     await tester.pumpWidget(_testApp());
 
@@ -50,7 +68,10 @@ void main() {
   });
 }
 
-Widget _testApp() {
+Widget _testApp({
+  ChatComposerSourcePresentation sourcePresentation =
+      ChatComposerSourcePresentation.separateCamera,
+}) {
   return MaterialApp(
     home: Scaffold(
       body: AltiveChatRoom(
@@ -62,6 +83,7 @@ Widget _testApp() {
           Icons.arrow_forward_ios,
           key: Key('展開ボタン'),
         ),
+        sourcePresentation: sourcePresentation,
         bottomLeadingWidgets: [
           IconButton(
             key: const Key('先頭ボタン'),

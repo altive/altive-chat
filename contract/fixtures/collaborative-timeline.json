@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "grouping": {
+    "timezone": "UTC",
+    "maximumIntervalSeconds": 300,
+    "cases": [
+      {
+        "name": "同一時刻",
+        "elapsedSeconds": 0,
+        "sameSender": true,
+        "regular": true,
+        "boundary": false,
+        "expected": true
+      },
+      {
+        "name": "5分以内",
+        "elapsedSeconds": 299,
+        "sameSender": true,
+        "regular": true,
+        "boundary": false,
+        "expected": true
+      },
+      {
+        "name": "5分境界",
+        "elapsedSeconds": 300,
+        "sameSender": true,
+        "regular": true,
+        "boundary": false,
+        "expected": true
+      },
+      {
+        "name": "閾値超過",
+        "elapsedSeconds": 301,
+        "sameSender": true,
+        "regular": true,
+        "boundary": false,
+        "expected": false
+      },
+      {
+        "name": "負時間",
+        "elapsedSeconds": -1,
+        "sameSender": true,
+        "regular": true,
+        "boundary": false,
+        "expected": false
+      },
+      {
+        "name": "別sender",
+        "elapsedSeconds": 1,
+        "sameSender": false,
+        "regular": true,
+        "boundary": false,
+        "expected": false
+      },
+      {
+        "name": "system",
+        "elapsedSeconds": 1,
+        "sameSender": true,
+        "regular": false,
+        "boundary": false,
+        "expected": false
+      },
+      {
+        "name": "未読境界",
+        "elapsedSeconds": 1,
+        "sameSender": true,
+        "regular": true,
+        "boundary": true,
+        "expected": false
+      }
+    ]
+  },
+  "summary": {
+    "title": "共有された対象",
+    "value": "3 → 2",
+    "metadata": "操作した人・12:00",
+    "details": "任意の補足"
+  },
+  "attachmentMenuOrder": [
+    "camera",
+    "photoLibrary",
+    "file",
+    "clipboard"
+  ]
+}

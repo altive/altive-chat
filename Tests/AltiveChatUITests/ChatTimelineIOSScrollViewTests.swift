@@ -84,6 +84,44 @@
       #expect(latestFrame.maxY <= visibleBounds.maxY + 2)
     }
 
+    @Test("可変高の履歴prependで先頭可視IDとpixel位置を保持する")
+    @MainActor
+    func preservesFirstVisibleRowAndPixelOffsetWhenPrependingHistory() async throws {
+      let model = ChatTimelineIOSHistoryModel()
+      let content = ChatTimelineIOSHistoryTestView(model: model)
+        .frame(width: 390, height: 600)
+      let controller = UIHostingController(rootView: content)
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+      window.rootViewController = controller
+      window.makeKeyAndVisible()
+      defer {
+        window.isHidden = true
+        window.rootViewController = nil
+      }
+      await settleLayout(of: controller.view)
+      let scrollView = try #require(findScrollView(in: controller.view))
+      scrollView.setContentOffset(
+        CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y + 17),
+        animated: false
+      )
+      await settleLayout(of: controller.view)
+      let viewport = scrollView.frame(in: window)
+      let firstVisible = try #require(
+        model.frames.filter { $0.value.intersects(viewport) }
+          .min { $0.value.minY < $1.value.minY })
+      let previousOffset = firstVisible.value.minY - viewport.minY
+      let proxy = try #require(model.proxy)
+      await proxy.preservePosition(at: 0) {
+        model.items = Array(-7..<0) + model.items
+      }
+      await settleLayout(of: controller.view)
+      let currentFrame = try #require(model.frames[firstVisible.key])
+      #expect(abs(currentFrame.minY - viewport.minY - previousOffset) < 2)
+      let currentFirstVisible = model.frames.filter { $0.value.intersects(viewport) }
+        .min { $0.value.minY < $1.value.minY }?.key
+      #expect(currentFirstVisible == firstVisible.key)
+    }
+
     @Test("受信メッセージのAvatarを左余白の内側へ配置する")
     @MainActor
     func keepsIncomingAvatarInsideLeadingInset() async throws {
@@ -547,6 +585,44 @@
   extension UIView {
     fileprivate func frame(in view: UIView) -> CGRect {
       convert(bounds, to: view)
+    }
+  }
+#endif
+
+#if os(iOS)
+  @MainActor
+  private final class ChatTimelineIOSHistoryModel: ObservableObject {
+    @Published var items = Array(0..<30)
+    var frames: [Int: CGRect] = [:]
+    var proxy: ChatTimelineProxy?
+  }
+
+  @MainActor
+  private struct ChatTimelineIOSHistoryTestView: View {
+    @ObservedObject var model: ChatTimelineIOSHistoryModel
+
+    var body: some View {
+      ChatTimeline(
+        timelineID: "history-pixel-offset",
+        isReadyForInitialPositioning: true,
+        initialPosition: ChatTimelineInitialPosition.item(8),
+        followLatestTrigger: 0,
+        followLatestAnimation: nil
+      ) { proxy in
+        ForEach(model.items, id: \.self) { id in
+          Text(verbatim: "Message \(id)")
+            .frame(maxWidth: .infinity)
+            .frame(height: CGFloat(55 + abs(id % 4) * 19))
+            .id(id)
+            .chatTimelineItem(id)
+            .onGeometryChange(for: CGRect.self) {
+              $0.frame(in: .global)
+            } action: {
+              model.frames[id] = $0
+            }
+        }
+        .onAppear { model.proxy = proxy }
+      }
     }
   }
 #endif

@@ -5,6 +5,12 @@ import UniformTypeIdentifiers
 @testable import AltiveChatUI
 
 struct ChatImageInputConfigurationTests {
+  @Test("集約添付menuは入力中も維持する")
+  func attachmentMenuRemainsVisibleWhileFocused() {
+    #expect(showsChatComposerSourceButtons(isFocused: true, sourcePresentation: .attachmentMenu))
+    #expect(!showsChatComposerSourceButtons(isFocused: true))
+  }
+
   @Test func defaultsToFourPickerImages() {
     let configuration = ChatImageInputConfiguration()
 

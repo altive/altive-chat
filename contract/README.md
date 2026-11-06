@@ -13,6 +13,7 @@ Altive Chatの利用・実装・検証に必要な契約をこのディレクト
 | [リポジトリ構成](repository-architecture.md) | モジュール配置、依存境界、version管理 |
 | [リンクプレビュー](link-preview-contract.md) | resolver、表示model、画像loader、失敗時の動作、呼び出し側の安全条件 |
 | [リプライ](reply-message-contract.md) | 軽量返信参照、選択・取消・引用、権限と保存の責務 |
+| [構造化イベントと会話](collaborative-timeline-contract.md) | 添付の集約方針、構造化要約、通常投稿の連続判定 |
 | [汎用メッセージカード](message-card-contract.md) | style、slot、theme、アクセシビリティ、検証条件 |
 | [SwiftUI画像入力・表示](swift-image-message-design.md) | Picker、画像ドラフト、画像loader、アプリとの連携 |
 | [Compose画像入力・表示](android-image-message-design.md) | Photo Picker、URI resolver、表示と後方互換性 |

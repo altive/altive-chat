@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'chat_attachment_menu.dart';
 import 'chat_link_preview_card.dart';
 import 'chat_link_preview_scope.dart';
 import 'common_cached_network_image.dart';
@@ -30,6 +31,7 @@ class BottomWidget extends StatefulWidget {
     required this.textFieldSuffixBuilder,
     required this.messageTypeNotifier,
     required this.leadingWidgets,
+    this.sourcePresentation = ChatComposerSourcePresentation.separateCamera,
     required this.replyToMessageBar,
     required this.stickerPackages,
     required this.stickerPickerFooter,
@@ -68,6 +70,9 @@ class BottomWidget extends StatefulWidget {
 
   /// 入力欄先頭に表示するウィジェット一覧。
   final List<Widget>? leadingWidgets;
+
+  /// 添付menuの表示方針。
+  final ChatComposerSourcePresentation sourcePresentation;
 
   /// 返信先メッセージ表示バー。
   final Widget? replyToMessageBar;
@@ -218,6 +223,10 @@ class _BottomWidgetState extends State<BottomWidget> {
     final altiveChatRoomTheme = InheritedAltiveChatRoomTheme.of(context).theme;
     final linkPreviewScope = ChatLinkPreviewScope.maybeOf(context);
     final leadingWidgets = widget.leadingWidgets;
+    final showsLeadingWidgets =
+        widget.sourcePresentation ==
+            ChatComposerSourcePresentation.attachmentMenu ||
+        _showLeadingWidgets;
     final replyToMessageBar = widget.replyToMessageBar;
     final textFieldSuffixBuilder = widget.textFieldSuffixBuilder;
     final messageTypeNotifier = widget.messageTypeNotifier;
@@ -316,11 +325,11 @@ class _BottomWidgetState extends State<BottomWidget> {
               child: Row(
                 children: [
                   /// 先頭に表示するWidgetを表示する場合
-                  if (leadingWidgets != null && _showLeadingWidgets)
+                  if (leadingWidgets != null && showsLeadingWidgets)
                     ...leadingWidgets,
 
                   /// 先頭に表示するWidgetを非表示にする場合
-                  if (leadingWidgets != null && !_showLeadingWidgets)
+                  if (leadingWidgets != null && !showsLeadingWidgets)
                     IconButton(
                       icon:
                           widget.expandButtonIcon ??

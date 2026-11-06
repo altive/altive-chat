@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
@@ -122,6 +123,51 @@ class ChatTimelineTest {
       assertEquals(previousOffset, anchor.offset)
       assertEquals(25, items.size)
     }
+  }
+
+  @Test
+  fun `自動履歴の失敗後は明示再試行まで取得を繰り返さない`() {
+    lateinit var timelineState: ChatTimelineState
+    var failure by mutableStateOf<String?>(null)
+    var attempts = 0
+    val items = (0 until 20).toList()
+    compose.setContent {
+      timelineState = rememberChatTimelineState()
+      MaterialTheme {
+        Box(Modifier.height(200.dp)) {
+          ChatTimeline(
+            timelineId = "history-retry",
+            itemIds = items,
+            itemIndex = items::indexOf,
+            latestItemIndex = items.lastIndex,
+            isReadyForInitialPositioning = true,
+            followLatestTrigger = 0,
+            state = timelineState,
+            history = ChatTimelineHistoryConfiguration.automatic(
+              canLoadOlder = true,
+              isLoading = false,
+              anchorId = 0,
+              loadOlderLabel = "履歴を読み込む",
+              failureMessage = failure,
+              retryLabel = "再試行",
+              onLoadOlder = {
+                attempts += 1
+                failure = "履歴を取得できませんでした"
+              },
+            ),
+          ) {
+            items(items, key = { it }) { id -> TimelineTestItem(id) }
+          }
+        }
+      }
+    }
+    compose.waitForIdle()
+    compose.runOnIdle { runBlocking { timelineState.listState.scrollToItem(0) } }
+    compose.waitForIdle()
+    compose.runOnIdle { assertEquals(1, attempts) }
+    compose.onNodeWithText("再試行").performClick()
+    compose.waitForIdle()
+    compose.runOnIdle { assertEquals(2, attempts) }
   }
 
   @Test

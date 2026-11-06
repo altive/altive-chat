@@ -59,6 +59,8 @@ public struct ChatTimelineProxy {
   fileprivate let scrollProxy: ScrollViewProxy
   fileprivate let bottomAnchorID: ChatTimelineBottomAnchorID
   fileprivate let prepareForProxyPositioning: @MainActor () -> Void
+  fileprivate let captureHistoryPosition: @MainActor () -> ChatTimelineHistoryPosition?
+  fileprivate let restoreHistoryPosition: @MainActor (ChatTimelineHistoryPosition) -> Bool
 
   /// 指定した表示要素へ移動する。
   public func scrollTo<ID: Hashable>(
@@ -94,8 +96,10 @@ public struct ChatTimelineProxy {
     while operation: @MainActor () async -> Void
   ) async {
     prepareForProxyPositioning()
+    let position = captureHistoryPosition()
     await operation()
     await waitForTimelineLayout()
+    if let position, restoreHistoryPosition(position) { return }
     var transaction = Transaction()
     transaction.disablesAnimations = true
     withTransaction(transaction) {
@@ -187,6 +191,8 @@ public struct ChatTimelineHistoryConfiguration<ID: Hashable> {
   fileprivate let anchorID: ID?
   fileprivate let loadOlderLabel: String
   fileprivate let controlStyle: ChatTimelineHistoryControlStyle
+  fileprivate let failureMessage: String?
+  fileprivate let retryLabel: String?
   fileprivate let onLoadOlder: () async -> Void
 
   /// 履歴追加を使用しない設定。
@@ -198,6 +204,8 @@ public struct ChatTimelineHistoryConfiguration<ID: Hashable> {
       anchorID: nil,
       loadOlderLabel: "",
       controlStyle: .plain,
+      failureMessage: nil,
+      retryLabel: nil,
       onLoadOlder: {}
     )
   }
@@ -209,6 +217,8 @@ public struct ChatTimelineHistoryConfiguration<ID: Hashable> {
     anchorID: ID?,
     loadOlderLabel: String,
     controlStyle: ChatTimelineHistoryControlStyle = .plain,
+    failureMessage: String? = nil,
+    retryLabel: String? = nil,
     onLoadOlder: @escaping () async -> Void
   ) -> Self {
     .init(
@@ -218,6 +228,8 @@ public struct ChatTimelineHistoryConfiguration<ID: Hashable> {
       anchorID: anchorID,
       loadOlderLabel: loadOlderLabel,
       controlStyle: controlStyle,
+      failureMessage: failureMessage,
+      retryLabel: retryLabel,
       onLoadOlder: onLoadOlder
     )
   }
@@ -229,6 +241,8 @@ public struct ChatTimelineHistoryConfiguration<ID: Hashable> {
     anchorID: ID?,
     loadOlderLabel: String,
     controlStyle: ChatTimelineHistoryControlStyle = .plain,
+    failureMessage: String? = nil,
+    retryLabel: String? = nil,
     onLoadOlder: @escaping () async -> Void
   ) -> Self {
     .init(
@@ -238,6 +252,8 @@ public struct ChatTimelineHistoryConfiguration<ID: Hashable> {
       anchorID: anchorID,
       loadOlderLabel: loadOlderLabel,
       controlStyle: controlStyle,
+      failureMessage: failureMessage,
+      retryLabel: retryLabel,
       onLoadOlder: onLoadOlder
     )
   }
@@ -270,6 +286,11 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
   @State private var historyCoordinateSpaceID = UUID()
   @State private var historyTopOffset: CGFloat?
   @State private var isHistoryLoadScheduled = false
+  @State private var hasRequestedAutomaticHistory = false
+  @State private var automaticHistoryAnchor: ID?
+  #if os(iOS)
+    @State private var historyPositionTracker = ChatTimelineHistoryPositionTracker()
+  #endif
   @State private var visiblePosition: AnyHashable?
   @State private var visiblePositionAnchor = ChatTimelineScrollAnchor.latest
   @State private var isNearBottom = true
@@ -368,7 +389,26 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
       let timelineProxy = ChatTimelineProxy(
         scrollProxy: scrollProxy,
         bottomAnchorID: bottomAnchorID,
-        prepareForProxyPositioning: { visiblePosition = nil }
+        prepareForProxyPositioning: {
+          visiblePosition = nil
+          #if os(iOS)
+            historyPositionTracker.invalidatePosition()
+          #endif
+        },
+        captureHistoryPosition: {
+          #if os(iOS)
+            historyPositionTracker.capture()
+          #else
+            nil
+          #endif
+        },
+        restoreHistoryPosition: { position in
+          #if os(iOS)
+            historyPositionTracker.restore(position)
+          #else
+            false
+          #endif
+        }
       )
       GeometryReader { viewport in
         let isViewportReady = ChatTimelineViewportLayout.isReady(viewport.size)
@@ -382,6 +422,9 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
           VStack(spacing: spacing) {
             historyControl(using: timelineProxy)
             content(timelineProxy)
+              #if os(iOS)
+                .environment(\.chatTimelineHistoryPositionTracker, historyPositionTracker)
+              #endif
             Color.clear
               .frame(height: 1)
               .id(AnyHashable(bottomAnchorID))
@@ -485,6 +528,8 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
           positionInitiallyIfNeeded(using: timelineProxy, viewportSize: viewport.size)
         }
         .onChange(of: positioningScope) { _, _ in
+          hasRequestedAutomaticHistory = false
+          automaticHistoryAnchor = nil
           positioningState.reset()
           invalidatePositionMeasurements()
           positionInitiallyIfNeeded(using: timelineProxy, viewportSize: viewport.size)
@@ -550,17 +595,24 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
   @ViewBuilder
   private func historyControl(using proxy: ChatTimelineProxy) -> some View {
     if history.mode != nil, history.canLoadOlder {
-      historyButton(using: proxy)
-        .background {
-          if history.mode == .automatic {
-            GeometryReader { geometry in
-              Color.clear.preference(
-                key: ChatTimelineHistoryTopOffsetKey.self,
-                value: geometry.frame(in: .named(historyCoordinateSpaceID)).minY
-              )
-            }
+      VStack(spacing: 6) {
+        if let failureMessage = history.failureMessage {
+          Text(failureMessage)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        historyButton(using: proxy)
+      }
+      .background {
+        if history.mode == .automatic {
+          GeometryReader { geometry in
+            Color.clear.preference(
+              key: ChatTimelineHistoryTopOffsetKey.self,
+              value: geometry.frame(in: .named(historyCoordinateSpaceID)).minY
+            )
           }
         }
+      }
     }
   }
 
@@ -575,9 +627,14 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
       } else {
         switch history.controlStyle {
         case .plain:
-          Text(history.loadOlderLabel)
+          Text(
+            history.failureMessage == nil
+              ? history.loadOlderLabel : (history.retryLabel ?? history.loadOlderLabel))
         case .bordered(let systemImage):
-          Label(history.loadOlderLabel, systemImage: systemImage)
+          Label(
+            history.failureMessage == nil
+              ? history.loadOlderLabel : (history.retryLabel ?? history.loadOlderLabel),
+            systemImage: systemImage)
         }
       }
     }
@@ -594,7 +651,11 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
   }
 
   private func requestAutomaticHistoryIfNeeded(using proxy: ChatTimelineProxy) {
-    guard history.mode == .automatic, historyTopOffset.map({ $0 >= -1 }) == true else { return }
+    guard history.mode == .automatic,
+      history.failureMessage == nil,
+      historyTopOffset.map({ $0 >= -1 }) == true,
+      !hasRequestedAutomaticHistory || automaticHistoryAnchor != history.anchorID
+    else { return }
     requestHistory(using: proxy)
   }
 
@@ -607,6 +668,8 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
     else { return }
 
     isHistoryLoadScheduled = true
+    hasRequestedAutomaticHistory = true
+    automaticHistoryAnchor = history.anchorID
     Task { @MainActor in
       defer { isHistoryLoadScheduled = false }
       if let anchorID = history.anchorID {

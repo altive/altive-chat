@@ -3,8 +3,16 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-func showsChatComposerSourceButtons(isFocused: Bool) -> Bool {
-  !isFocused
+/// 添付操作の配置。既存の独立カメラを既定として維持する。
+public enum ChatComposerSourcePresentation: Hashable, Sendable {
+  case separateCamera
+  case attachmentMenu
+}
+
+func showsChatComposerSourceButtons(
+  isFocused: Bool, sourcePresentation: ChatComposerSourcePresentation = .separateCamera
+) -> Bool {
+  sourcePresentation == .attachmentMenu || !isFocused
 }
 
 func chatImageMenuSources(
@@ -80,6 +88,7 @@ public struct ChatImageComposer: View {
   let onPasteUnavailable: (() -> Void)?
   let onRemoveImage: (String) -> Void
   let onSubmit: () -> Void
+  private let sourcePresentation: ChatComposerSourcePresentation
   private let additionalSourceButton: AnyView?
 
   /// 画像入力に対応したチャット入力欄を作成する。
@@ -111,7 +120,8 @@ public struct ChatImageComposer: View {
     onPasteUnavailable: (() -> Void)? = nil,
     onRemoveImage: @escaping (String) -> Void,
     onSubmit: @escaping () -> Void,
-    additionalSourceButton: AnyView? = nil
+    additionalSourceButton: AnyView? = nil,
+    sourcePresentation: ChatComposerSourcePresentation = .separateCamera
   ) {
     _draft = draft
     _imageDrafts = imageDrafts
@@ -140,6 +150,7 @@ public struct ChatImageComposer: View {
     self.onPasteUnavailable = onPasteUnavailable
     self.onRemoveImage = onRemoveImage
     self.onSubmit = onSubmit
+    self.sourcePresentation = sourcePresentation
     self.additionalSourceButton = additionalSourceButton
   }
 
@@ -150,6 +161,9 @@ public struct ChatImageComposer: View {
       linkPreviewContent
 
       HStack(alignment: .bottom, spacing: 7) {
+        if sourcePresentation == .attachmentMenu {
+          additionalSourceButton
+        }
         if hasSourceButtons {
           if showsSourceButtons {
             sourceButtons
@@ -260,8 +274,8 @@ public struct ChatImageComposer: View {
   @ViewBuilder
   private var sourceButtons: some View {
     HStack(spacing: 1) {
-      additionalSourceButton
-      if availableImageInputSources.contains(.camera) {
+      if sourcePresentation == .separateCamera { additionalSourceButton }
+      if sourcePresentation == .separateCamera, availableImageInputSources.contains(.camera) {
         Button {
           focus.wrappedValue = false
           onRequestCamera?()
@@ -283,6 +297,17 @@ public struct ChatImageComposer: View {
 
       if hasImageSourceMenu {
         Menu {
+          if sourcePresentation == .attachmentMenu, availableImageInputSources.contains(.camera),
+            onRequestCamera != nil
+          {
+            Button {
+              focus.wrappedValue = false
+              onRequestCamera?()
+            } label: {
+              Label(strings.cameraButtonLabel, systemImage: "camera")
+            }
+            .disabled(!isImageAdditionEnabled || isPreparingCameraImage)
+          }
           if imageMenuSources.contains(.photoLibrary) {
             Button {
               focus.wrappedValue = false
@@ -312,7 +337,7 @@ public struct ChatImageComposer: View {
             .accessibilityLabel(strings.clipboardButtonLabel)
           }
         } label: {
-          Image(systemName: "photo.on.rectangle")
+          Image(systemName: sourcePresentation == .attachmentMenu ? "plus" : "photo.on.rectangle")
             .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
@@ -394,13 +419,15 @@ public struct ChatImageComposer: View {
   }
 
   private var hasSourceButtons: Bool {
-    additionalSourceButton != nil
-      || availableImageInputSources.contains(.camera)
+    (sourcePresentation == .separateCamera && additionalSourceButton != nil)
+      || (sourcePresentation == .separateCamera && availableImageInputSources.contains(.camera))
       || hasImageSourceMenu
   }
 
   private var hasImageSourceMenu: Bool {
     !imageMenuSources.isEmpty
+      || (sourcePresentation == .attachmentMenu && availableImageInputSources.contains(.camera)
+        && onRequestCamera != nil)
   }
 
   private var imageMenuSources: [ChatImageInputSource] {
@@ -431,7 +458,8 @@ public struct ChatImageComposer: View {
   }
 
   private var showsSourceButtons: Bool {
-    showsChatComposerSourceButtons(isFocused: focus.wrappedValue)
+    showsChatComposerSourceButtons(
+      isFocused: focus.wrappedValue, sourcePresentation: sourcePresentation)
   }
 
   private var limitedDraft: Binding<String> {

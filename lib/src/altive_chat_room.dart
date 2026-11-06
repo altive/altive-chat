@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'bottom_widget.dart';
+import 'chat_attachment_menu.dart';
 import 'chat_link_preview_scope.dart';
 import 'chat_reply_scope.dart';
 import 'common_cached_network_image.dart';
@@ -135,6 +136,7 @@ class AltiveChatRoom extends StatefulWidget {
     this.expandButtonIcon,
     this.textFieldSuffixBuilder,
     this.bottomLeadingWidgets,
+    this.sourcePresentation = ChatComposerSourcePresentation.separateCamera,
     this.replyToMessageBar,
     this.stickerPackages = const [],
     this.stickerPickerFooter,
@@ -307,6 +309,9 @@ class AltiveChatRoom extends StatefulWidget {
   /// テキストフィールドにフォーカスがあたると非表示になる。
   /// [expandButtonIcon]をタップすることで表示できる。
   final List<Widget>? bottomLeadingWidgets;
+
+  /// 集約方針では先頭の添付menuをfocus中も維持する。
+  final ChatComposerSourcePresentation sourcePresentation;
 
   /// リプライ先のメッセージを表示するWidget。
   final Widget? replyToMessageBar;
@@ -696,6 +701,7 @@ class _AltiveChatRoomState extends State<AltiveChatRoom> {
                         textFieldSuffixBuilder: widget.textFieldSuffixBuilder,
                         messageTypeNotifier: messageTypeNotifier,
                         leadingWidgets: widget.bottomLeadingWidgets,
+                        sourcePresentation: widget.sourcePresentation,
                         replyToMessageBar: _selectedReply == null
                             ? widget.replyToMessageBar
                             : _ChatReplyComposerBar(

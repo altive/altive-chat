@@ -1,5 +1,6 @@
 package jp.co.altive.chat
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -105,12 +106,14 @@ class ChatTimelineHistoryConfiguration<ID> private constructor(
   internal val anchorId: ID?,
   internal val loadOlderLabel: String,
   internal val controlStyle: ChatTimelineHistoryControlStyle,
+  internal val failureMessage: String?,
+  internal val retryLabel: String?,
   internal val onLoadOlder: suspend () -> Unit,
 ) {
   companion object {
     /** 履歴追加を無効にする設定。 */
     fun <ID> disabled(): ChatTimelineHistoryConfiguration<ID> =
-      ChatTimelineHistoryConfiguration(null, false, false, null, "", ChatTimelineHistoryControlStyle.Plain) {}
+      ChatTimelineHistoryConfiguration(null, false, false, null, "", ChatTimelineHistoryControlStyle.Plain, null, null) {}
 
     /** 手動で履歴を追加する設定を作成する。 */
     fun <ID> manual(
@@ -119,6 +122,8 @@ class ChatTimelineHistoryConfiguration<ID> private constructor(
       anchorId: ID? = null,
       loadOlderLabel: String,
       controlStyle: ChatTimelineHistoryControlStyle = ChatTimelineHistoryControlStyle.Plain,
+      failureMessage: String? = null,
+      retryLabel: String? = null,
       onLoadOlder: suspend () -> Unit,
     ): ChatTimelineHistoryConfiguration<ID> = ChatTimelineHistoryConfiguration(
       ChatTimelineHistoryLoadingMode.Manual,
@@ -127,6 +132,8 @@ class ChatTimelineHistoryConfiguration<ID> private constructor(
       anchorId,
       loadOlderLabel,
       controlStyle,
+      failureMessage,
+      retryLabel,
       onLoadOlder,
     )
 
@@ -137,6 +144,8 @@ class ChatTimelineHistoryConfiguration<ID> private constructor(
       anchorId: ID? = null,
       loadOlderLabel: String,
       controlStyle: ChatTimelineHistoryControlStyle = ChatTimelineHistoryControlStyle.Plain,
+      failureMessage: String? = null,
+      retryLabel: String? = null,
       onLoadOlder: suspend () -> Unit,
     ): ChatTimelineHistoryConfiguration<ID> = ChatTimelineHistoryConfiguration(
       ChatTimelineHistoryLoadingMode.Automatic,
@@ -145,6 +154,8 @@ class ChatTimelineHistoryConfiguration<ID> private constructor(
       anchorId,
       loadOlderLabel,
       controlStyle,
+      failureMessage,
+      retryLabel,
       onLoadOlder,
     )
   }
@@ -229,6 +240,8 @@ fun <ID, FollowTrigger> ChatTimeline(
   }
   val historyItemCount = if (history.mode != null && history.canLoadOlder) 1 else 0
   val currentItemIndex by rememberUpdatedState(itemIndex)
+  val currentHistory by rememberUpdatedState(history)
+  val currentItemIds by rememberUpdatedState(itemIds)
   val currentHistoryItemCount by rememberUpdatedState(historyItemCount)
   state.contentPrefixCount = historyItemCount
   state.latestContentIndex = latestItemIndex
@@ -236,6 +249,8 @@ fun <ID, FollowTrigger> ChatTimeline(
   var previousLatestContentIndex by remember(timelineId) { mutableStateOf(latestItemIndex) }
   var observedPositioningScope by remember(state) { mutableStateOf<Any?>(null) }
   var isHistoryLoadScheduled by remember(timelineId) { mutableStateOf(false) }
+  var hasRequestedAutomaticHistory by remember(timelineId) { mutableStateOf(false) }
+  var automaticHistoryAnchor by remember(timelineId) { mutableStateOf<ID?>(null) }
   if (previousFollowTrigger == followLatestTrigger) {
     // 履歴追加など、新着以外のindex変化は次の追従判定の基準へ反映する。
     previousLatestContentIndex = latestItemIndex
@@ -277,23 +292,30 @@ fun <ID, FollowTrigger> ChatTimeline(
   }
 
   suspend fun requestHistory() {
+    val configuration = currentHistory
     if (
       state.positionedScope != positioningScope ||
-      !history.canLoadOlder ||
-      history.isLoading ||
+      !configuration.canLoadOlder ||
+      configuration.isLoading ||
       isHistoryLoadScheduled
     ) return
 
     isHistoryLoadScheduled = true
+    hasRequestedAutomaticHistory = true
+    automaticHistoryAnchor = configuration.anchorId
     try {
-      val anchor = history.anchorId?.let { id ->
+      // 上端controlや独自headerを除いた、実際に見えている最初の投稿を優先する。
+      val firstVisibleId = state.listState.layoutInfo.visibleItemsInfo.firstNotNullOfOrNull { item ->
+        currentItemIds.firstOrNull { id -> fullIndex(id) == item.index }
+      }
+      val anchor = (firstVisibleId ?: configuration.anchorId)?.let { id ->
         val index = fullIndex(id)
         val offset = index?.let { target ->
           state.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }?.offset
         } ?: 0
         ChatTimelineHistoryAnchor(id, offset)
       }
-      history.onLoadOlder()
+      configuration.onLoadOlder()
       waitForLayout()
       if (anchor != null) {
         // LazyListStateのscrollOffsetは項目の表示offsetと符号が逆になる。
@@ -342,7 +364,7 @@ fun <ID, FollowTrigger> ChatTimeline(
     if (state.positionedScope == positioningScope) state.scrollToLatest(animated = false)
   }
 
-  LaunchedEffect(history.mode, history.canLoadOlder, positioningScope) {
+  LaunchedEffect(history.mode, history.canLoadOlder, history.failureMessage, positioningScope) {
     if (history.mode != ChatTimelineHistoryLoadingMode.Automatic) return@LaunchedEffect
     snapshotFlow {
       state.positionedScope == positioningScope &&
@@ -351,7 +373,12 @@ fun <ID, FollowTrigger> ChatTimeline(
     }
       .distinctUntilChanged()
       .filter { it }
-      .collect { requestHistory() }
+      .collect {
+        val configuration = currentHistory
+        if (configuration.failureMessage == null &&
+          (!hasRequestedAutomaticHistory || automaticHistoryAnchor != configuration.anchorId)
+        ) requestHistory()
+      }
   }
 
   LazyColumn(
@@ -362,16 +389,21 @@ fun <ID, FollowTrigger> ChatTimeline(
   ) {
     if (historyItemCount == 1) {
       item(key = "AltiveChatUI.HistoryControl") {
+        Column {
+        if (history.failureMessage != null) Text(history.failureMessage)
+        val historyLabel = if (history.failureMessage == null) history.loadOlderLabel
+          else history.retryLabel ?: history.loadOlderLabel
         when {
           history.isLoading || isHistoryLoadScheduled -> CircularProgressIndicator()
           history.controlStyle == ChatTimelineHistoryControlStyle.Bordered -> OutlinedButton(
             onClick = { coroutineScope.launch { requestHistory() } },
             modifier = Modifier.testTag("AltiveChatUI.HistoryControl"),
-          ) { Text(history.loadOlderLabel) }
+          ) { Text(historyLabel) }
           else -> TextButton(
             onClick = { coroutineScope.launch { requestHistory() } },
             modifier = Modifier.testTag("AltiveChatUI.HistoryControl"),
-          ) { Text(history.loadOlderLabel) }
+          ) { Text(historyLabel) }
+        }
         }
       }
     }

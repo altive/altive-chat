@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -55,9 +56,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
+/** 添付操作の配置。従来の独立カメラを既定として維持する。 */
+enum class ChatComposerSourcePresentation { SeparateCamera, AttachmentMenu }
+
 internal fun shouldShowChatComposerSourceButtons(
   isFocused: Boolean,
-): Boolean = !isFocused
+  sourcePresentation: ChatComposerSourcePresentation = ChatComposerSourcePresentation.SeparateCamera,
+): Boolean = sourcePresentation == ChatComposerSourcePresentation.AttachmentMenu || !isFocused
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -85,6 +90,7 @@ fun ChatImageComposer(
   onRequestFile: (() -> Unit)? = null,
   onRequestClipboard: (() -> Unit)? = null,
   onReceiveImageUris: ((List<String>) -> Unit)? = null,
+  sourcePresentation: ChatComposerSourcePresentation = ChatComposerSourcePresentation.SeparateCamera,
 ) {
   val canSend = ChatComposerSendPolicy.canSend(
     draft = draft,
@@ -102,9 +108,11 @@ fun ChatImageComposer(
     hasFileHandler = onRequestFile != null,
     hasClipboardHandler = onRequestClipboard != null,
   )
-  val hasSourceButtons = additionalSourceContent != null || availableImageInputSources.isNotEmpty()
+  val attachmentMenu = sourcePresentation == ChatComposerSourcePresentation.AttachmentMenu
+  val hasSourceButtons = (!attachmentMenu && additionalSourceContent != null) || availableImageInputSources.isNotEmpty()
   val showsSourceButtons = shouldShowChatComposerSourceButtons(
     isFocused = isComposerFocused,
+    sourcePresentation = sourcePresentation,
   )
   Column(
     Modifier.fillMaxWidth()
@@ -153,11 +161,12 @@ fun ChatImageComposer(
       verticalAlignment = Alignment.Bottom,
       horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
+      if (attachmentMenu) additionalSourceContent?.invoke()
       if (hasSourceButtons) {
         if (showsSourceButtons) {
           Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-            additionalSourceContent?.invoke()
-            if (ChatImageInputSource.Camera in availableImageInputSources) {
+            if (!attachmentMenu) additionalSourceContent?.invoke()
+            if (!attachmentMenu && ChatImageInputSource.Camera in availableImageInputSources) {
               IconButton(
                 onClick = onRequestCamera,
                 enabled = imageDrafts.size < configuration.maximumSelectionCount &&
@@ -169,7 +178,7 @@ fun ChatImageComposer(
                 else Icon(Icons.Default.CameraAlt, contentDescription = null)
               }
             }
-            if (menuImageInputSources.isNotEmpty()) {
+            if (menuImageInputSources.isNotEmpty() || (attachmentMenu && ChatImageInputSource.Camera in availableImageInputSources)) {
               ChatImageSourceMenu(
                 availableImageInputSources = menuImageInputSources,
                 enabled = imageDrafts.size < configuration.maximumSelectionCount,
@@ -177,6 +186,9 @@ fun ChatImageComposer(
                 onRequestPhotoLibrary = onRequestPhotoLibrary,
                 onRequestFile = onRequestFile,
                 onRequestClipboard = onRequestClipboard,
+                onRequestCamera = if (attachmentMenu && ChatImageInputSource.Camera in availableImageInputSources) onRequestCamera else null,
+                cameraEnabled = !isPreparingCameraImage && !isPreparingImages,
+                attachmentMenu = attachmentMenu,
               )
             }
           }
@@ -261,6 +273,9 @@ private fun ChatImageSourceMenu(
   onRequestPhotoLibrary: () -> Unit,
   onRequestFile: (() -> Unit)?,
   onRequestClipboard: (() -> Unit)?,
+  onRequestCamera: (() -> Unit)? = null,
+  cameraEnabled: Boolean = true,
+  attachmentMenu: Boolean = false,
 ) {
   var expanded by remember { mutableStateOf(false) }
   Box {
@@ -271,9 +286,15 @@ private fun ChatImageSourceMenu(
         .testTag("AltiveChatUI.ImageSourceMenuButton")
         .semantics { contentDescription = strings.imageSourceMenuButtonLabel },
     ) {
-      Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+      Icon(if (attachmentMenu) Icons.Default.Add else Icons.Default.PhotoLibrary, contentDescription = null)
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+      if (onRequestCamera != null) DropdownMenuItem(
+        text = { Text(strings.cameraButtonLabel) },
+        leadingIcon = { Icon(Icons.Default.CameraAlt, contentDescription = null) },
+        enabled = cameraEnabled,
+        onClick = { expanded = false; onRequestCamera() },
+      )
       if (ChatImageInputSource.PhotoLibrary in availableImageInputSources) {
         DropdownMenuItem(
           text = { Text(strings.photoLibraryButtonLabel) },
