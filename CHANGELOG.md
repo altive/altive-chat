@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 1.9.0 - 2026-11-06
+
 - SwiftUIとComposeの履歴取得へ失敗・明示再試行の表示と自動再試行ループ抑止を追加した。
   SwiftUIは行の安定IDと実viewport内のoffsetを保持する任意の`chatTimelineItem`を追加した。
 
