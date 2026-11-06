@@ -51,9 +51,14 @@ Swiftは`calendar`、Composeは`zoneId`を注入可能。Flutterは端末local t
 
 SwiftUI/Composeの`ChatTimelineHistoryConfiguration.manual/automatic`は、任意の`failureMessage`
 と`retryLabel`を受け付ける。失敗中は上端へ説明と明示再試行を表示し、自動取得を停止する。
-同じanchorの要求が無進展で完了した場合も自動再要求を抑止する。取得、cursor、権限、課金判断は
+同じanchorの要求が無進展で完了した場合も自動再要求を抑止する。
+Composeの自動取得jobは取得可否・失敗表示のeffect更新で取消さず、最後のpageでcontrolが消える場合も
+位置復元まで完了する。loading中もボタンを測定し、文字拡大・改行を含めてidleと同じ高さを維持する。
+取得中にroomや初期配置scopeが切り替わった場合は、新しいscopeへ古い位置を復元しない。取得、cursor、権限、課金判断は
 呼び出し側が所有する。SwiftUIのiOS実装では各行の`.id(id)`に続けて`.chatTimelineItem(id)`を付けると、
 実ScrollViewの先頭可視IDとviewport内offsetでprepend後の位置を保持する。
+集約行は構成元投稿の安定IDを同じ行へ登録でき、行IDが再編成されても元投稿のmarkerから復元する。
+iOSの復元は描画frameへの反映後に行い、待機中の送信追従・明示移動を優先する。Taskキャンセル後は復元しない。
 macOSの同modifierは互換のためのno-opとし、従来anchorによる復元を維持する。
 modifier未採用の既存呼び出し側も従来anchorによる復元を維持する。
 

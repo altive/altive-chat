@@ -1,5 +1,6 @@
 package jp.co.altive.chat
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,8 +24,11 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -317,7 +321,7 @@ fun <ID, FollowTrigger> ChatTimeline(
       }
       configuration.onLoadOlder()
       waitForLayout()
-      if (anchor != null) {
+      if (anchor != null && state.positionedScope == positioningScope) {
         // LazyListStateのscrollOffsetは項目の表示offsetと符号が逆になる。
         fullIndex(anchor.id)?.let { state.listState.scrollToItem(it, -anchor.offset) }
       }
@@ -377,7 +381,10 @@ fun <ID, FollowTrigger> ChatTimeline(
         val configuration = currentHistory
         if (configuration.failureMessage == null &&
           (!hasRequestedAutomaticHistory || automaticHistoryAnchor != configuration.anchorId)
-        ) requestHistory()
+        ) {
+          // 取得可否・失敗状態によるeffect再起動で、復元前の取得jobを取消さない。
+          coroutineScope.launch { requestHistory() }
+        }
       }
   }
 
@@ -390,20 +397,30 @@ fun <ID, FollowTrigger> ChatTimeline(
     if (historyItemCount == 1) {
       item(key = "AltiveChatUI.HistoryControl") {
         Column {
-        if (history.failureMessage != null) Text(history.failureMessage)
-        val historyLabel = if (history.failureMessage == null) history.loadOlderLabel
-          else history.retryLabel ?: history.loadOlderLabel
-        when {
-          history.isLoading || isHistoryLoadScheduled -> CircularProgressIndicator()
-          history.controlStyle == ChatTimelineHistoryControlStyle.Bordered -> OutlinedButton(
-            onClick = { coroutineScope.launch { requestHistory() } },
-            modifier = Modifier.testTag("AltiveChatUI.HistoryControl"),
-          ) { Text(historyLabel) }
-          else -> TextButton(
-            onClick = { coroutineScope.launch { requestHistory() } },
-            modifier = Modifier.testTag("AltiveChatUI.HistoryControl"),
-          ) { Text(historyLabel) }
-        }
+          if (history.failureMessage != null) Text(history.failureMessage)
+          val historyLabel = if (history.failureMessage == null) history.loadOlderLabel
+            else history.retryLabel ?: history.loadOlderLabel
+          val loading = history.isLoading || isHistoryLoadScheduled
+          // ボタンの測定は残す。文字拡大・改行を含め、spinner切替で行高を変えない。
+          val controlModifier = Modifier.alpha(if (loading) 0f else 1f).then(
+            if (loading) Modifier.clearAndSetSemantics {}
+            else Modifier.testTag("AltiveChatUI.HistoryControl"),
+          )
+          Box(contentAlignment = Alignment.Center) {
+            when (history.controlStyle) {
+              ChatTimelineHistoryControlStyle.Bordered -> OutlinedButton(
+                onClick = { coroutineScope.launch { requestHistory() } },
+                enabled = !loading,
+                modifier = controlModifier,
+              ) { Text(historyLabel) }
+              ChatTimelineHistoryControlStyle.Plain -> TextButton(
+                onClick = { coroutineScope.launch { requestHistory() } },
+                enabled = !loading,
+                modifier = controlModifier,
+              ) { Text(historyLabel) }
+            }
+            if (loading) CircularProgressIndicator()
+          }
         }
       }
     }

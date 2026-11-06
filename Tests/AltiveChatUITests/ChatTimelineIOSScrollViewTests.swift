@@ -122,6 +122,131 @@
       #expect(currentFirstVisible == firstVisible.key)
     }
 
+    @Test("先頭group IDの置換後も構成元投稿の部分表示位置を保つ")
+    @MainActor
+    func preservesOriginalPostOffsetWhenHistoryMergesGroups() async throws {
+      try await assertGroupedHistoryOffset(repartitions: false)
+    }
+
+    @Test("履歴prependのgroup再分割後も構成元投稿の部分表示位置を保つ")
+    @MainActor
+    func preservesOriginalPostOffsetWhenHistoryRepartitionsGroups() async throws {
+      try await assertGroupedHistoryOffset(repartitions: true)
+    }
+
+    @Test("履歴復元中の送信追従を古いsnapshotで上書きしない")
+    @MainActor
+    func preservesForcedLatestFollowingWhileHistoryRequestCompletes() async throws {
+      let model = ChatTimelineIOSGroupedHistoryModel()
+      let controller = UIHostingController(
+        rootView: ChatTimelineIOSGroupedHistoryView(model: model).frame(width: 390, height: 600))
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+      window.rootViewController = controller
+      window.makeKeyAndVisible()
+      controller.view.frame = window.bounds
+      defer {
+        window.isHidden = true
+        window.rootViewController = nil
+      }
+      await settleGroupedHistoryLayout(of: controller.view)
+      let originalMarker = try #require(findGroupedHistoryMarker(id: "e2", in: controller.view))
+      let scrollView = try #require(enclosingGroupedHistoryScrollView(of: originalMarker))
+      scrollView.setContentOffset(
+        CGPoint(x: 0, y: originalMarker.convert(originalMarker.bounds, to: scrollView).minY + 17),
+        animated: false)
+      await settleGroupedHistoryLayout(of: controller.view)
+      let proxy = try #require(model.proxy)
+      await proxy.preservePosition(at: "e2") {
+        model.followTrigger += 1
+        await settleGroupedHistoryLayout(of: controller.view)
+        let maximum = max(
+          -scrollView.adjustedContentInset.top,
+          scrollView.contentSize.height - scrollView.bounds.height
+            + scrollView.adjustedContentInset.bottom)
+        #expect(abs(scrollView.contentOffset.y - maximum) < 2)
+        // 追加0件で完了しても、取得中に選んだ最新位置を優先する。
+      }
+      await settleGroupedHistoryLayout(of: controller.view)
+      let maximum = max(
+        -scrollView.adjustedContentInset.top,
+        scrollView.contentSize.height - scrollView.bounds.height
+          + scrollView.adjustedContentInset.bottom)
+      #expect(abs(scrollView.contentOffset.y - maximum) < 2)
+    }
+
+    @MainActor
+    private func assertGroupedHistoryOffset(repartitions: Bool) async throws {
+      let model = ChatTimelineIOSGroupedHistoryModel()
+      let controller = UIHostingController(
+        rootView: ChatTimelineIOSGroupedHistoryView(model: model).frame(width: 390, height: 600))
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+      window.rootViewController = controller
+      window.makeKeyAndVisible()
+      controller.view.frame = window.bounds
+      defer {
+        window.isHidden = true
+        window.rootViewController = nil
+      }
+      await settleGroupedHistoryLayout(of: controller.view)
+      let originalMarker = try #require(findGroupedHistoryMarker(id: "e2", in: controller.view))
+      let scrollView = try #require(enclosingGroupedHistoryScrollView(of: originalMarker))
+      scrollView.setContentOffset(
+        CGPoint(
+          x: scrollView.contentOffset.x,
+          y: originalMarker.convert(originalMarker.bounds, to: scrollView).minY + 17),
+        animated: false)
+      await settleGroupedHistoryLayout(of: controller.view)
+      let before =
+        originalMarker.convert(originalMarker.bounds, to: scrollView).minY
+        - scrollView.bounds.minY
+      #expect(abs(before + 17) < 2)
+      let proxy = try #require(model.proxy)
+      await proxy.preservePosition(at: "e2") {
+        model.prependHistory(repartitions: repartitions)
+      }
+      await settleGroupedHistoryLayout(of: controller.view)
+      let oldGroupStillExists = model.groups.contains { $0.id == "e2" }
+      #expect(!oldGroupStillExists)
+      let frames = try ["e2", "e3"].map { id in
+        let group = try #require(model.groups.first { $0.members.contains(id) })
+        let marker = try #require(findGroupedHistoryMarker(id: group.id, in: controller.view))
+        #expect(marker.window === window)
+        return marker.convert(marker.bounds, to: scrollView).minY - scrollView.bounds.minY
+      }
+      // 同じ旧groupのmarkerは同座標。選ばれた構成元投稿の位置が残ることを確認する。
+      let difference = try #require(frames.map { abs($0 - before) }.min())
+      #expect(difference < 2)
+    }
+
+    @MainActor
+    private func settleGroupedHistoryLayout(of view: UIView) async {
+      for _ in 0..<10 {
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        try? await Task.sleep(for: .milliseconds(25))
+      }
+    }
+
+    @MainActor
+    private func findGroupedHistoryMarker(id: String, in view: UIView) -> UIView? {
+      if let marker = view as? ChatTimelineIOSNativeHistoryMarkerView,
+        marker.groupID == id, marker.window != nil
+      {
+        return marker
+      }
+      return view.subviews.lazy.compactMap { findGroupedHistoryMarker(id: id, in: $0) }.first
+    }
+
+    @MainActor
+    private func enclosingGroupedHistoryScrollView(of view: UIView) -> UIScrollView? {
+      var ancestor = view.superview
+      while let current = ancestor {
+        if let scrollView = current as? UIScrollView { return scrollView }
+        ancestor = current.superview
+      }
+      return nil
+    }
+
     @Test("受信メッセージのAvatarを左余白の内側へ配置する")
     @MainActor
     func keepsIncomingAvatarInsideLeadingInset() async throws {
@@ -623,6 +748,89 @@
         }
         .onAppear { model.proxy = proxy }
       }
+    }
+  }
+
+  private struct ChatTimelineIOSHistoryDisplayGroup: Identifiable {
+    let members: [String]
+    var id: String { members[0] }
+  }
+
+  @MainActor
+  private final class ChatTimelineIOSGroupedHistoryModel: ObservableObject {
+    @Published var groups =
+      [ChatTimelineIOSHistoryDisplayGroup(members: ["e2", "e3"])]
+      + (0..<20).map { ChatTimelineIOSHistoryDisplayGroup(members: ["later-\($0)"]) }
+    @Published var followTrigger = 0
+    var proxy: ChatTimelineProxy?
+
+    func prependHistory(repartitions: Bool) {
+      let prefix = (0..<4).map { ChatTimelineIOSHistoryDisplayGroup(members: ["older-\($0)"]) }
+      let replacement =
+        repartitions
+        ? [
+          ChatTimelineIOSHistoryDisplayGroup(members: ["e1", "e2"]),
+          ChatTimelineIOSHistoryDisplayGroup(members: ["e3"]),
+        ]
+        : [ChatTimelineIOSHistoryDisplayGroup(members: ["e1", "e2", "e3"])]
+      groups = prefix + replacement + Array(groups.dropFirst())
+    }
+  }
+
+  @MainActor
+  private struct ChatTimelineIOSGroupedHistoryView: View {
+    @ObservedObject var model: ChatTimelineIOSGroupedHistoryModel
+
+    var body: some View {
+      ChatTimeline(
+        timelineID: "grouped-history-pixel-offset",
+        isReadyForInitialPositioning: true,
+        initialPosition: ChatTimelineInitialPosition<String>.item("e2", anchor: .top),
+        followLatestTrigger: model.followTrigger,
+        followLatestAnimation: nil,
+        forceFollowLatest: true,
+        spacing: 10
+      ) { proxy in
+        Color.clear.frame(height: 0).onAppear { model.proxy = proxy }
+        ForEach(model.groups) { group in
+          Text(group.members.joined(separator: " · "))
+            .frame(maxWidth: .infinity)
+            .frame(height: CGFloat(72 + group.members.count * 28))
+            .id(group.id)
+            .background {
+              ZStack {
+                ForEach(group.members, id: \.self) { id in
+                  Color.clear.chatTimelineItem(id)
+                }
+              }
+            }
+            .background {
+              ChatTimelineIOSNativeHistoryMarker(groupID: group.id)
+            }
+        }
+      }
+    }
+  }
+
+  @MainActor
+  private final class ChatTimelineIOSNativeHistoryMarkerView: UIView {
+    var groupID = ""
+  }
+
+  @MainActor
+  private struct ChatTimelineIOSNativeHistoryMarker: UIViewRepresentable {
+    let groupID: String
+
+    func makeUIView(context: Context) -> ChatTimelineIOSNativeHistoryMarkerView {
+      let view = ChatTimelineIOSNativeHistoryMarkerView()
+      view.isUserInteractionEnabled = false
+      view.isAccessibilityElement = false
+      view.groupID = groupID
+      return view
+    }
+
+    func updateUIView(_ uiView: ChatTimelineIOSNativeHistoryMarkerView, context: Context) {
+      uiView.groupID = groupID
     }
   }
 #endif

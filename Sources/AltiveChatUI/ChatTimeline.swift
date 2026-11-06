@@ -99,6 +99,7 @@ public struct ChatTimelineProxy {
     let position = captureHistoryPosition()
     await operation()
     await waitForTimelineLayout()
+    guard !Task.isCancelled else { return }
     if let position, restoreHistoryPosition(position) { return }
     var transaction = Transaction()
     transaction.disablesAnimations = true
@@ -116,13 +117,17 @@ public struct ChatTimelineProxy {
   }
 
   private func waitForTimelineLayout() async {
-    await withCheckedContinuation { continuation in
-      DispatchQueue.main.async {
+    #if os(iOS)
+      await ChatTimelineLayoutFrameWaiter().wait()
+    #else
+      await withCheckedContinuation { continuation in
         DispatchQueue.main.async {
-          continuation.resume()
+          DispatchQueue.main.async {
+            continuation.resume()
+          }
         }
       }
-    }
+    #endif
   }
 }
 
@@ -751,6 +756,9 @@ public struct ChatTimeline<ID: Hashable, FollowTrigger: Equatable, Content: View
     using proxy: ChatTimelineProxy,
     animation: Animation? = nil
   ) {
+    #if os(iOS)
+      historyPositionTracker.invalidatePosition()
+    #endif
     let target = AnyHashable(bottomAnchorID)
     visiblePositionAnchor = ChatTimelineScrollAnchor.latest
     if let animation {
